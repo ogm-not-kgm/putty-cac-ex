@@ -84,4 +84,5 @@
     - `bg_glass()` の `HRGN` リーク修正、および `d2d_resize()` での壁紙再生成条件の限定を実施。
   - `code/windows/window.c`: `do_text_internal()` での `GetCursorPos()` / `ScreenToClient()` 呼び出しを `if (attr & TATTR_URLMASK)` 時に限定。
   - `benchmark.ja.md`, `benchmark.md`: `master`（GDI）と `mod-d2ddw`（最適化前後）の描画パフォーマンス比較ベンチマーク結果を日本語・英語で追加。
+  - `packager/build.cmd`, `packager/build.ps1`, `README.ja.md`, `README.md`: `master` と `mod-d2ddw` の一時 Git ワークツリーから `x64` / `arm64` リリースバイナリ・ZIP・ハッシュファイルを生成するパッケージングスクリプトを追加し、`README.ja.md` / `README.md` にビルド手順・`puttytab.exe` 互換性注記・アーキテクチャ決定記録（ADR）を追記。
   - `code/version.h`: `TEXTVER` を `Release 0.85.3+rv20260820.d2ddw20261119.p1`、`BINARY_VERSION` を `0,85,3,2` に更新（`SSHVER` は `-Release-0.85-3` を維持）。

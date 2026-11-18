@@ -57,4 +57,5 @@ Integrated `putty-d2ddw/patch/d2ddw.diff` (Direct2D / DirectWrite rendering and 
     - Fixed an `HRGN` leak in `bg_glass()` and restricted wallpaper regeneration in `d2d_resize()`.
   - `code/windows/window.c`: Restricted `GetCursorPos()` / `ScreenToClient()` in `do_text_internal()` to runs with `TATTR_URLMASK`.
   - `benchmark.ja.md`, `benchmark.md`: Added Japanese and English rendering performance benchmark reports comparing `master` (GDI) and `mod-d2ddw` (before and after optimization).
+  - `packager/build.cmd`, `packager/build.ps1`, `README.ja.md`, `README.md`: Added dual-worktree (`master` + `mod-d2ddw`) `x64` / `arm64` release build, ZIP packaging, and hash generation script, and documented build instructions, `puttytab.exe` compatibility notes, and Architecture Decision Records (ADR) in `README.ja.md` and `README.md`.
   - `code/version.h`: Updated `TEXTVER` to `Release 0.85.3+rv20260820.d2ddw20261119.p1` and `BINARY_VERSION` to `0,85,3,2` (keeping `SSHVER` as `-Release-0.85-3`).
