@@ -51,9 +51,9 @@ static int mock_char_width(TermWin *win, int uc) { return 1; }
 static void mock_set_cursor_pos(TermWin *win, int x, int y) {}
 static void mock_set_scrollbar(TermWin *win, int total, int start, int page) {}
 static void mock_draw_text(TermWin *win, int x, int y, wchar_t *text, int len,
-                           unsigned long attrs, int lattrs, truecolour tc) {}
+                           unsigned long long attrs, int lattrs, truecolour tc) {}
 static void mock_draw_cursor(TermWin *win, int x, int y, wchar_t *text,
-                             int len, unsigned long attrs, int lattrs,
+                             int len, unsigned long long attrs, int lattrs,
                              truecolour tc) {}
 static void mock_set_raw_mouse_mode(TermWin *win, bool enable) {}
 static void mock_set_raw_mouse_mode_pointer(TermWin *win, bool enable) {}

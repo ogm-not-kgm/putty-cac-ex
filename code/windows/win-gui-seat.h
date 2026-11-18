@@ -11,22 +11,6 @@ struct PopupMenu {
 };
 enum { SYSMENU, CTXMENU };             /* indices into popup_menus field */
 
-#define FONT_NORMAL 0
-#define FONT_BOLD 1
-#define FONT_UNDERLINE 2
-#define FONT_BOLDUND 3
-#define FONT_WIDE       0x04
-#define FONT_HIGH       0x08
-#define FONT_NARROW     0x10
-
-#define FONT_OEM        0x20
-#define FONT_OEMBOLD    0x21
-#define FONT_OEMUND     0x22
-#define FONT_OEMBOLDUND 0x23
-
-#define FONT_MAXNO      0x40
-#define FONT_SHIFT      5
-
 enum BoldMode {
     BOLD_NONE, BOLD_SHADOW, BOLD_FONT
 };
@@ -115,9 +99,6 @@ struct WinGuiSeat {
     int cursor_type;
     int vtmode;
 
-    HFONT fonts[FONT_MAXNO];
-    LOGFONT lfont;
-    bool fontflag[FONT_MAXNO];
     enum BoldMode bold_font_mode;
 
     bool bold_colours;
@@ -125,10 +106,6 @@ struct WinGuiSeat {
     int descent, font_strikethrough_y;
 
     COLORREF colours[OSC4_NCOLOURS];
-    HPALETTE pal;
-    LPLOGPALETTE logpal;
-    bool tried_pal;
-    COLORREF colorref_modifier;
 
     struct _dpi_info dpi_info;
 
@@ -149,8 +126,6 @@ struct WinGuiSeat {
     int compose_char;
     WPARAM compose_keycode;
 
-    HDC wintw_hdc;
-
     bool resizing;
     bool need_backend_resize;
 
@@ -169,9 +144,11 @@ struct WinGuiSeat {
     wchar_t pending_surrogate;
 
     bool ime_mode;
-    WgsWallpaper wall;
     WgsWinTransparency wtrans;
     struct TsfState *tsf;
+    int font_zoom_delta;
+    struct FontZoomState *font_zoom;
+    bool font_pick_waiting;
 };
 
 extern const LogPolicyVtable win_gui_logpolicy_vt; /* in dialog.c */

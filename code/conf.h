@@ -541,6 +541,224 @@ CONF_OPTION(supdup_scroll,
     SAVE_KEYWORD("SUPDUPScrolling"),
 )
 
+/* HACK: PuttyTray / Reconnect */
+CONF_OPTION(wakeup_reconnect,
+    VALUE_TYPE(BOOL),
+    DEFAULT_BOOL(false),
+    SAVE_KEYWORD("WakeupReconnect"),
+)
+CONF_OPTION(failure_reconnect,
+    VALUE_TYPE(BOOL),
+    DEFAULT_BOOL(false),
+    SAVE_KEYWORD("FailureReconnect"),
+)
+/* gotta ni */
+CONF_OPTION(alt_metabit,
+    VALUE_TYPE(BOOL),
+    DEFAULT_BOOL(false),
+    SAVE_KEYWORD("AltMetaBit"),
+)
+CONF_OPTION(ctrl_tab_switch,
+    VALUE_TYPE(BOOL),
+    DEFAULT_BOOL(false),
+    SAVE_KEYWORD("CtrlTabSwitch"),
+)
+CONF_OPTION(rightaltkey,
+    VALUE_TYPE(BOOL),
+    DEFAULT_BOOL(false),
+    SAVE_KEYWORD("RightAltKey"),
+)
+CONF_OPTION(use_5casis,
+    VALUE_TYPE(BOOL),
+    DEFAULT_BOOL(false),
+    SAVE_KEYWORD("Use5Casis"),
+)
+CONF_OPTION(iconfile,
+    VALUE_TYPE(FILENAME),
+    SAVE_KEYWORD("IconFile"),
+)
+/* iceiv */
+CONF_OPTION(pvkey_str,
+    SUBKEY_TYPE(STR),
+    VALUE_TYPE(STR),
+    LOAD_CUSTOM, SAVE_CUSTOM,
+)
+CONF_OPTION(x,
+    VALUE_TYPE(INT),
+    DEFAULT_INT(CW_USEDEFAULT),
+    SAVE_KEYWORD("TermX"),
+)
+CONF_OPTION(y,
+    VALUE_TYPE(INT),
+    DEFAULT_INT(CW_USEDEFAULT),
+    SAVE_KEYWORD("TermY"),
+)
+CONF_OPTION(ignore_chars,
+    VALUE_TYPE(STR),
+    DEFAULT_STR(""),
+    SAVE_KEYWORD("IgnoreChars"),
+)
+/* Hyperlink */
+CONF_OPTION(url_enable,
+    VALUE_TYPE(BOOL),
+    DEFAULT_BOOL(true),
+    SAVE_KEYWORD("HyperlinkEnable"),
+)
+CONF_OPTION(url_underline,
+    VALUE_TYPE(INT),
+    DEFAULT_INT(1),
+    SAVE_KEYWORD("HyperlinkUnderline"),
+)
+CONF_OPTION(url_ctrl_click,
+    VALUE_TYPE(BOOL),
+    DEFAULT_BOOL(true),
+    SAVE_KEYWORD("HyperlinkUseCtrlClick"),
+)
+/* Background*/
+CONF_OPTION(alphas_pc_cursor_active,
+    VALUE_TYPE(INT),
+    LOAD_CUSTOM, SAVE_CUSTOM,
+)
+CONF_OPTION(alphas_pc_cursor_inactive,
+    VALUE_TYPE(INT),
+    LOAD_CUSTOM, SAVE_CUSTOM,
+)
+CONF_OPTION(alphas_pc_defauly_fg_active,
+    VALUE_TYPE(INT),
+    LOAD_CUSTOM, SAVE_CUSTOM,
+)
+CONF_OPTION(alphas_pc_defauly_fg_inactive,
+    VALUE_TYPE(INT),
+    LOAD_CUSTOM, SAVE_CUSTOM,
+)
+CONF_OPTION(alphas_pc_degault_bg_active,
+    VALUE_TYPE(INT),
+    LOAD_CUSTOM, SAVE_CUSTOM,
+)
+CONF_OPTION(alphas_pc_degault_bg_inactive,
+    VALUE_TYPE(INT),
+    LOAD_CUSTOM, SAVE_CUSTOM,
+)
+CONF_OPTION(alphas_pc_bg_active,
+    VALUE_TYPE(INT),
+    LOAD_CUSTOM, SAVE_CUSTOM,
+)
+CONF_OPTION(alphas_pc_bg_inactive,
+    VALUE_TYPE(INT),
+    LOAD_CUSTOM, SAVE_CUSTOM,
+)
+CONF_OPTION(bg_wallpaper,
+    VALUE_TYPE(INT),
+    DEFAULT_INT(0),
+    SAVE_KEYWORD("BackgroundWallpaper"),
+)
+CONF_OPTION(bg_effect,
+    VALUE_TYPE(INT),
+    DEFAULT_INT(0),
+    SAVE_KEYWORD("BackgroundEffect"),
+)
+CONF_OPTION(wp_file,
+    VALUE_TYPE(FILENAME),
+    SAVE_KEYWORD("WallpaperFile"),
+)
+CONF_OPTION(wp_position,
+    VALUE_TYPE(INT),
+    DEFAULT_INT(0),
+    SAVE_KEYWORD("WallpaperPosition"),
+)
+CONF_OPTION(wp_align,
+    VALUE_TYPE(INT),
+    DEFAULT_INT(0),
+    SAVE_KEYWORD("WallpaperAlign"),
+)
+CONF_OPTION(wp_valign,
+    VALUE_TYPE(INT),
+    DEFAULT_INT(0),
+    SAVE_KEYWORD("WallpaperVerticalAlign"),
+)
+CONF_OPTION(wp_moving,
+    VALUE_TYPE(BOOL),
+    DEFAULT_BOOL(false),
+    SAVE_KEYWORD("WallpaperMoving"),
+)
+/* ADB */
+CONF_OPTION(adb_transport,
+    VALUE_TYPE(STR),
+    DEFAULT_STR("transport-usb"),
+    SAVE_KEYWORD("AdbPort"),
+)
+CONF_OPTION(adb_start,
+    VALUE_TYPE(BOOL),
+    DEFAULT_BOOL(true),
+    SAVE_KEYWORD("AdbStart"),
+)
+CONF_OPTION(adb_kill,
+    VALUE_TYPE(BOOL),
+    DEFAULT_BOOL(true),
+    SAVE_KEYWORD("AdbKill"),
+)
+
+/* d2ddw */
+CONF_OPTION(rendering_mode,
+    VALUE_TYPE(INT),
+    DEFAULT_INT(RM_DEFAULT),
+    SAVE_KEYWORD("RenderingMode"),
+)
+CONF_OPTION(border_style,
+    VALUE_TYPE(INT),
+    DEFAULT_INT(0),
+    SAVE_KEYWORD("BorderStyle"),
+)
+CONF_OPTION(fps,
+    VALUE_TYPE(INT),
+    DEFAULT_INT(60),
+    SAVE_KEYWORD("Fps"),
+)
+CONF_OPTION(line_gap,
+    VALUE_TYPE(INT),
+    DEFAULT_INT(0),
+    SAVE_KEYWORD("LineGap"),
+)
+CONF_OPTION(baseline_offset,
+    VALUE_TYPE(INT),
+    DEFAULT_INT(0),
+    SAVE_KEYWORD("BaselineOffset"),
+)
+CONF_OPTION(baseline_offset_fw,
+    VALUE_TYPE(INT),
+    DEFAULT_INT(0),
+    SAVE_KEYWORD("BaselineOffsetFW"),
+)
+CONF_OPTION(use_widefont,
+    VALUE_TYPE(BOOL),
+    DEFAULT_BOOL(false),
+    SAVE_KEYWORD("UseWideFont"),
+)
+CONF_OPTION(altfont,
+    VALUE_TYPE(FONT),
+    SAVE_KEYWORD("AltFont"),
+)
+CONF_OPTION(use_altfont,
+    VALUE_TYPE(BOOL),
+    DEFAULT_BOOL(false),
+    SAVE_KEYWORD("UseAltFont"),
+)
+CONF_OPTION(gamma,
+    VALUE_TYPE(INT),
+    DEFAULT_INT(1800),
+    SAVE_KEYWORD("Gamma"),
+)
+CONF_OPTION(enhanced_contrast,
+    VALUE_TYPE(INT),
+    DEFAULT_INT(50),
+    SAVE_KEYWORD("EnhancedContrast"),
+)
+CONF_OPTION(cleartype_level,
+    VALUE_TYPE(INT),
+    DEFAULT_INT(50),
+    SAVE_KEYWORD("ClearTypeLevel"),
+)
+
 /* Keyboard options */
 CONF_OPTION(bksp_is_delete,
     VALUE_TYPE(BOOL),
@@ -929,6 +1147,16 @@ CONF_OPTION(no_bracketed_paste,
     DEFAULT_BOOL(false),
     SAVE_KEYWORD("DisableBracketedPaste"),
 )
+CONF_OPTION(clip_modify,
+    VALUE_TYPE(INT),
+    DEFAULT_INT(0),
+    SAVE_KEYWORD("ClipModify"),
+)
+CONF_OPTION(clip_query,
+    VALUE_TYPE(INT),
+    DEFAULT_INT(0),
+    SAVE_KEYWORD("ClipQuery"),
+)
 
 /* Colour options */
 CONF_OPTION(ansi_colour,
@@ -1310,40 +1538,10 @@ CONF_OPTION(winclass,
 
 /* end of original list */ \
 
-CONF_OPTION(alt_metabit,
-    VALUE_TYPE(BOOL),
-    DEFAULT_BOOL(false),
-    SAVE_KEYWORD("AltMetaBit"),
-)
-CONF_OPTION(ctrl_tab_switch,
-    VALUE_TYPE(BOOL),
-    DEFAULT_BOOL(false),
-    SAVE_KEYWORD("CtrlTabSwitch"),
-)
 CONF_OPTION(switch_skip_min,
     VALUE_TYPE(BOOL),
     DEFAULT_BOOL(false),
     SAVE_KEYWORD("SwitchSkipMin"),
-)
-CONF_OPTION(rightaltkey,
-    VALUE_TYPE(BOOL),
-    DEFAULT_BOOL(false),
-    SAVE_KEYWORD("RightAltKey"),
-)
-CONF_OPTION(use_5casis,
-    VALUE_TYPE(BOOL),
-    DEFAULT_BOOL(false),
-    SAVE_KEYWORD("Use5Casis"),
-)
-CONF_OPTION(x,
-    VALUE_TYPE(INT),
-    DEFAULT_INT(CW_USEDEFAULT),
-    SAVE_KEYWORD("TermX"),
-)
-CONF_OPTION(y,
-    VALUE_TYPE(INT),
-    DEFAULT_INT(CW_USEDEFAULT),
-    SAVE_KEYWORD("TermY"),
 )
 CONF_OPTION(transparent_mode,
     VALUE_TYPE(INT),
@@ -1383,10 +1581,6 @@ CONF_OPTION(use_ddb,
 CONF_OPTION(bgimg_file,
     VALUE_TYPE(FILENAME),
     SAVE_KEYWORD("BackgroundImageFile"),
-)
-CONF_OPTION(iconfile,
-    VALUE_TYPE(FILENAME),
-    SAVE_KEYWORD("IconFile"),
 )
 CONF_OPTION(win_opacity,
     VALUE_TYPE(INT),

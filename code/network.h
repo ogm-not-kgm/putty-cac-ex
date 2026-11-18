@@ -254,7 +254,7 @@ static inline void sk_write_eof(Socket *s)
 static inline void plug_log(
     Plug *p, Socket *s, int type, SockAddr *addr, int port,
     const char *msg, int code)
-{ p->vt->log(p, s, type, addr, port, msg, code); }
+{ p->vt->log(p, s, (PlugLogType)type, addr, port, msg, code); }
 static inline void plug_closing(Plug *p, PlugCloseType type, const char *msg)
 { p->vt->closing(p, type, msg); }
 static inline void plug_closing_normal(Plug *p)

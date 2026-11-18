@@ -13,6 +13,7 @@ add_sources_from_current_dir(utils
   utils/dll_hijacking_protection.c
   utils/dputs.c
   utils/escape_registry_key.c
+  utils/exec_browser.c
   utils/filename.c
   utils/fontspec.c
   utils/getdlgitemtext_alloc.c
@@ -69,8 +70,8 @@ add_sources_from_current_dir(otherbackends
 add_sources_from_current_dir(agent
   agent-client.c)
 add_sources_from_current_dir(guiterminal
-  winwallp.c wtrans.c
-  dialog.c controls.c config.c printing.c jump-list.c sizetip.c)
+  wtrans.c
+  dialog.c controls.c config.c printing.c jump-list.c sizetip.cpp)
 add_dependencies(guiterminal generated_licence_h) # dialog.c uses licence.h
 
 # This object awkwardly needs to live in the network library as well
@@ -93,6 +94,7 @@ add_executable(pageant
 add_dependencies(pageant generated_licence_h)
 target_link_libraries(pageant
   guimisc eventloop agent network crypto utils
+  iso2022
   ${platform_libraries})
 set_target_properties(pageant PROPERTIES WIN32_EXECUTABLE ON)
 installed_program(pageant)
@@ -112,9 +114,15 @@ add_library(tsf OBJECT
   tsf.cpp)
 target_compile_features(tsf PRIVATE cxx_std_20)
 
+add_library(fontzoom OBJECT
+  fontzoom.cpp)
+target_compile_features(fontzoom PRIVATE cxx_std_20)
+
 add_executable(putty
   window.c
+  d2ddw.cpp
   $<TARGET_OBJECTS:tsf>
+  $<TARGET_OBJECTS:fontzoom>
   putty.c
   help.c
   ${CMAKE_SOURCE_DIR}/stubs/no-console.c
@@ -133,7 +141,9 @@ target_compile_definitions(putty PRIVATE PUTTY_WITH_SSH)
 
 add_executable(puttytel
   window.c
+  d2ddw.cpp
   $<TARGET_OBJECTS:tsf>
+  $<TARGET_OBJECTS:fontzoom>
   putty.c
   help.c
   ${CMAKE_SOURCE_DIR}/stubs/no-gss.c
@@ -169,6 +179,7 @@ add_executable(puttygen
 add_dependencies(puttygen generated_licence_h)
 target_link_libraries(puttygen
   keygen guimisc crypto utils
+  iso2022
   ${platform_libraries})
 set_target_properties(puttygen PROPERTIES WIN32_EXECUTABLE ON)
 installed_program(puttygen)
@@ -176,7 +187,9 @@ installed_program(puttygen)
 if(HAVE_CONPTY)
   add_executable(pterm
     window.c
+    d2ddw.cpp
     $<TARGET_OBJECTS:tsf>
+    $<TARGET_OBJECTS:fontzoom>
     pterm.c
     help.c
     conpty.c
@@ -210,7 +223,7 @@ add_executable(test_screenshot
   ${CMAKE_SOURCE_DIR}/stubs/no-ini.c
   ${CMAKE_SOURCE_DIR}/stubs/no-iso2022.c
   test/test_screenshot.c)
-target_link_libraries(test_screenshot utils ${platform_libraries})
+target_link_libraries(test_screenshot utils iso2022 ${platform_libraries})
 
 add_executable(test_lineedit
   ${CMAKE_SOURCE_DIR}/test/test_lineedit.c

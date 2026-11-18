@@ -669,7 +669,7 @@ void save_open_settings(settings_w *sesskey, Conf *conf)
 #endif
                     );
 
-    for (i = 0; i < 24; i++) {
+    for (i = 0; i < CONF_NCOLOURS; i++) {
         char buf[20], buf2[30];
         sprintf(buf, "Colour%d", i);
         sprintf(buf2, "%d,%d,%d",
@@ -698,6 +698,26 @@ void save_open_settings(settings_w *sesskey, Conf *conf)
                        CONF_ctrlshiftcv, CONF_ctrlshiftcv_custom);
     wmap(sesskey, "PortForwardings", conf, CONF_portfwd, true);
     wmap(sesskey, "SSHManualHostKeys", conf, CONF_ssh_manual_hostkeys, false);
+
+    /* Background */
+    for (i = 0; i < 4; i++) {
+        static const int CONF_alphas_pc[4][2] = {
+            {CONF_alphas_pc_cursor_active,
+             CONF_alphas_pc_cursor_inactive},
+            {CONF_alphas_pc_defauly_fg_active,
+             CONF_alphas_pc_defauly_fg_inactive},
+            {CONF_alphas_pc_degault_bg_active,
+             CONF_alphas_pc_degault_bg_inactive},
+            {CONF_alphas_pc_bg_active,
+             CONF_alphas_pc_bg_inactive}
+        };
+        char buf[16], buf2[16];
+        sprintf(buf, "Alpha%d", i);
+        sprintf(buf2, "%d,%d",
+                conf_get_int(conf, CONF_alphas_pc[i][0]),
+                conf_get_int(conf, CONF_alphas_pc[i][1]));
+        write_setting_s(sesskey, buf, buf2);
+    }
 }
 
 bool load_settings(const char *section, Conf *conf)
@@ -1000,7 +1020,7 @@ void load_open_settings(settings_r *sesskey, Conf *conf)
 #endif
                  );
 
-    for (i = 0; i < 24; i++) {
+    for (i = 0; i < CONF_NCOLOURS; i++) {
         static const char *const defaults[] = {
             "187,187,187", "255,255,255", "0,0,0", "85,85,85", "0,0,0",
             "0,255,0", "0,0,0", "85,85,85", "187,0,0", "255,85,85",
@@ -1073,6 +1093,49 @@ void load_open_settings(settings_r *sesskey, Conf *conf)
         }
     }
     gppmap(sesskey, "SSHManualHostKeys", conf, CONF_ssh_manual_hostkeys);
+
+    /* iceiv */
+    for (i = 0; i < 256; i++) {
+        char tmp[16];
+        char *buf;
+        sprintf(tmp, "VKey%d", i);
+        buf = gpps_raw(sesskey, tmp, "");
+        conf_set_str_str(conf, CONF_pvkey_str, tmp, buf);
+        sfree(buf);
+    }
+    /* Background */
+    for (i = 0; i < 4; i++) {
+        static const char *const defaults[] = {
+            "100,100", "100,100", "100,100", "100,100"
+        };
+        static const int CONF_alphas_pc[4][2] = {
+            {CONF_alphas_pc_cursor_active,
+             CONF_alphas_pc_cursor_inactive},
+            {CONF_alphas_pc_defauly_fg_active,
+             CONF_alphas_pc_defauly_fg_inactive},
+            {CONF_alphas_pc_degault_bg_active,
+             CONF_alphas_pc_degault_bg_inactive},
+            {CONF_alphas_pc_bg_active,
+             CONF_alphas_pc_bg_inactive}
+        };
+        char buf[16];
+        char *buf2;
+        int c0 = 100;
+        int c1 = 100;
+        sprintf(buf, "Alpha%d", i);
+        buf2 = gpps_raw(sesskey, buf, defaults[i]);
+        if (sscanf(buf2, "%d,%d", &c0, &c1)) {
+            if (c0 > 100) {
+                c0 = 100;
+            }
+            if (c1 > 100) {
+                c1 = 100;
+            }
+            conf_set_int(conf, CONF_alphas_pc[i][0], c0);
+            conf_set_int(conf, CONF_alphas_pc[i][1], c1);
+        }
+        sfree(buf2);
+    }
 }
 
 bool do_defaults(const char *session, Conf *conf)

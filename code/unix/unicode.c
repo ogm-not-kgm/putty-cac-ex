@@ -230,7 +230,7 @@ bool init_ucs(struct unicode_data *ucsdata, char *linecharset,
      * simply CP437.
      */
     for (i = 0; i < 256; i++) {
-        char c[1];
+        Char c[1];
         const char *p;
         wchar_t wc[1];
         int len;

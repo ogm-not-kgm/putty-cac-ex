@@ -89,6 +89,22 @@ struct FontSpec *fontspec_new(
     (fq) == FQ_NONANTIALIASED ? NONANTIALIASED_QUALITY : \
     CLEARTYPE_QUALITY)
 
+#define D2D_FONT_QUALITY(fq)                                       \
+  ((fq) == FQ_DEFAULT ? D2D1_TEXT_ANTIALIAS_MODE_DEFAULT :         \
+   (fq) == FQ_ANTIALIASED ? D2D1_TEXT_ANTIALIAS_MODE_GRAYSCALE :   \
+   (fq) == FQ_NONANTIALIASED ? D2D1_TEXT_ANTIALIAS_MODE_ALIASED :  \
+   (fq) == FQ_CLEARTYPE ? D2D1_TEXT_ANTIALIAS_MODE_CLEARTYPE :     \
+   D2D1_TEXT_ANTIALIAS_MODE_DEFAULT)
+
+#define DW_RENDERING_MODE(rm)                                           \
+  ((rm) == RM_DEFAULT ? DWRITE_RENDERING_MODE_DEFAULT :                 \
+   (rm) == RM_GDI_NATURAL ? DWRITE_RENDERING_MODE_CLEARTYPE_GDI_NATURAL : \
+   (rm) == RM_GDI_CLASSIC ? DWRITE_RENDERING_MODE_CLEARTYPE_GDI_CLASSIC : \
+   (rm) == RM_NATURAL ? DWRITE_RENDERING_MODE_CLEARTYPE_NATURAL :       \
+   (rm) == RM_SYMMETRIC ? DWRITE_RENDERING_MODE_CLEARTYPE_NATURAL_SYMMETRIC : \
+   (rm) == RM_OUTLINE ? DWRITE_RENDERING_MODE_OUTLINE :                 \
+   DWRITE_RENDERING_MODE_DEFAULT)
+
 #define PLATFORM_IS_UTF16 /* enable UTF-16 processing when exchanging
                            * wchar_t strings with environment */
 
@@ -248,6 +264,8 @@ void launch_help(HWND hwnd, const char *topic);
 void quit_help(HWND hwnd);
 int has_embedded_chm(void);            /* 1 = yes, 0 = no, -1 = N/A */
 
+
+#ifndef __cplusplus
 /*
  * GUI seat methods in dialog.c, so that the vtable definition in
  * window.c can refer to them.
@@ -263,6 +281,7 @@ SeatPromptResult win_seat_confirm_weak_cached_hostkey(
     Seat *seat, SeatDialogText *text,
     void (*callback)(void *ctx, SeatPromptResult result), void *ctx);
 const SeatDialogPromptDescriptions *win_seat_prompt_descriptions(Seat *seat);
+#endif
 
 /*
  * Windows-specific clipboard helper function shared with dialog.c,
@@ -688,6 +707,8 @@ DECLSPEC_IMPORT DLL_DIRECTORY_COOKIE WINAPI AddDllDirectory (PCWSTR NewDirectory
  */
 void UpdateSizeTip(HWND src, int cx, int cy);
 void EnableSizeTip(bool bEnable);
+void ShowFontTip(HWND anchor, const char *text, int duration_ms);
+void HideFontTip(void);
 
 /*
  * Exports from unicode.c.
@@ -894,7 +915,9 @@ bool handle_special_filemapping_cmdline(char *cmdline, Conf *conf);
 void plug_closing_system_error(Plug *plug, DWORD error);
 void plug_closing_winsock_error(Plug *plug, DWORD error);
 
+#ifndef __cplusplus
 SeatPromptResult make_spr_sw_abort_winerror(const char *prefix, DWORD error);
+#endif
 
 HANDLE lock_interprocess_mutex(const char *mutexname, char **error);
 void unlock_interprocess_mutex(HANDLE mutex);

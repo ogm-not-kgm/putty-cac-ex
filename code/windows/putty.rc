@@ -8,7 +8,9 @@ IDI_MAINICON ICON "putty.ico"
 IDI_CFGICON ICON "puttycfg.ico"
 
 #include "help.rc2"
+#pragma code_page(65001)
 #include "putty-common.rc2"
+#pragma code_page(DEFAULT)
 
 #ifndef NO_MANIFESTS
 1 RT_MANIFEST "putty.mft"

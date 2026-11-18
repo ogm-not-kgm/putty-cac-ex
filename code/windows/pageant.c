@@ -2376,7 +2376,6 @@ int WINAPI WinMain(HINSTANCE inst, HINSTANCE prev, LPSTR cmdline, int show)
      * started up the main agent. Details of keys to be added are
      * stored in the 'clkeys' array.
      */
-
     process_ini_option(opt_error);
     confirm_any_request = (bool)app_conf_get_int("ConfirmAnyRequest", 0, 0, 1);
     bool add_keys_encrypted = false;
@@ -2678,8 +2677,8 @@ int WINAPI WinMain(HINSTANCE inst, HINSTANCE prev, LPSTR cmdline, int show)
     systray_menu = CreatePopupMenu();
     if (putty_path) {
         session_menu = CreateMenu();
-        AppendMenu(systray_menu, MF_ENABLED, IDM_PUTTY, "&New Session");
-        AppendMenu(systray_menu, MF_POPUP | MF_ENABLED,
+        l10nAppendMenu(systray_menu, MF_ENABLED, IDM_PUTTY, "&New Session");
+        l10nAppendMenu(systray_menu, MF_POPUP | MF_ENABLED,
                    (UINT_PTR) session_menu, "&Saved Sessions");
         AppendMenu(systray_menu, MF_SEPARATOR, 0, 0);
     }
@@ -2740,25 +2739,25 @@ int WINAPI WinMain(HINSTANCE inst, HINSTANCE prev, LPSTR cmdline, int show)
     AppendMenu(systray_menu, cert_menu_flags(cert_trusted_certs_only), IDM_TRUSTED, "Filter: Trusted Certs");
 	AppendMenu(systray_menu, cert_menu_flags(cert_ignore_expired_certs), IDM_NOEXPR, "Filter: No Expired Certs");
 #else 
-    AppendMenu(systray_menu, MF_ENABLED, IDM_VIEWKEYS,
+    l10nAppendMenu(systray_menu, MF_ENABLED, IDM_VIEWKEYS,
                "&View Keys");
-    AppendMenu(systray_menu, MF_ENABLED, IDM_ADDKEY, "Add &Key");
-    AppendMenu(systray_menu, MF_ENABLED, IDM_ADDKEY_ENCRYPTED,
+    l10nAppendMenu(systray_menu, MF_ENABLED, IDM_ADDKEY, "Add &Key");
+    l10nAppendMenu(systray_menu, MF_ENABLED, IDM_ADDKEY_ENCRYPTED,
                "Add key (encrypted)");
 #endif // PUTTY_CAC
     AppendMenu(systray_menu, MF_SEPARATOR, 0, 0);
-    AppendMenu(systray_menu, MF_ENABLED, IDM_REMOVE_ALL,
+    l10nAppendMenu(systray_menu, MF_ENABLED, IDM_REMOVE_ALL,
                "Remove All Keys");
-    AppendMenu(systray_menu, MF_ENABLED, IDM_REENCRYPT_ALL,
+    l10nAppendMenu(systray_menu, MF_ENABLED, IDM_REENCRYPT_ALL,
                "Re-encrypt All Keys");
     AppendMenu(systray_menu, MF_SEPARATOR, 0, 0);
     AppendMenu(systray_menu, confirm_any_request ? MF_CHECKED : MF_UNCHECKED, IDM_CONFIRM_REQUEST, "&Confirm Any Request");
     AppendMenu(systray_menu, MF_SEPARATOR, 0, 0);
     if (has_help())
-        AppendMenu(systray_menu, MF_ENABLED, IDM_HELP, "&Help");
-    AppendMenu(systray_menu, MF_ENABLED, IDM_ABOUT, "&About");
+        l10nAppendMenu(systray_menu, MF_ENABLED, IDM_HELP, "&Help");
+    l10nAppendMenu(systray_menu, MF_ENABLED, IDM_ABOUT, "&About");
     AppendMenu(systray_menu, MF_SEPARATOR, 0, 0);
-    AppendMenu(systray_menu, MF_ENABLED, IDM_CLOSE, "E&xit");
+    l10nAppendMenu(systray_menu, MF_ENABLED, IDM_CLOSE, "E&xit");
     initial_menuitems_count = GetMenuItemCount(session_menu);
 
     /* Set the default menu item. */

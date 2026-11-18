@@ -201,18 +201,109 @@ void win_setup_config_box(struct controlbox *b, HWND *hwndp, bool has_help,
     /*
      * Configurable font quality settings for Windows.
      */
-    s = ctrl_getset(b, "Window/Appearance", "font",
-                    "Font settings");
-    ctrl_checkbox(s, "Allow selection of variable-pitch fonts", NO_SHORTCUT,
-                  HELPCTX(appearance_font), variable_pitch_handler, I(0));
-    ctrl_radiobuttons(s, "Font quality:", 'q', 2,
+    // s = ctrl_getset(b, "Window/Appearance", "font",
+    //     	    "Font settings");
+    // ctrl_checkbox(s, "Allow selection of variable-pitch fonts", NO_SHORTCUT,
+    //               HELPCTX(appearance_font), variable_pitch_handler, I(0));
+    /* d2ddw */
+    s = ctrl_getset(b, "Window/Font", "font",
+                    "FullWidth Font settings");
+    ctrl_fontsel(s, "Font used for fullwidth characters", NO_SHORTCUT,
+                 HELPCTX(appearance_font),
+                 conf_fontsel_handler, I(CONF_widefont));
+    ctrl_checkbox(s, "Use fullwidth font", 'w',
+                  HELPCTX(no_help),
+                  conf_checkbox_handler, I(CONF_use_widefont));
+
+    s = ctrl_getset(b, "Window/Font", "font",
+                    "Fallback Font settings");
+    ctrl_fontsel(s, "Font used for fallback", NO_SHORTCUT,
+                 HELPCTX(appearance_font),
+                 conf_fontsel_handler, I(CONF_altfont));
+    ctrl_checkbox(s, "Use fallback font", 'f',
+                  HELPCTX(no_help),
+                  conf_checkbox_handler, I(CONF_use_altfont));
+
+    /* anti-aliasing */
+    ctrl_settitle(b, "Window/Anti-aliasing",
+                  "Options controlling anti-aliasing");
+
+    s = ctrl_getset(b, "Window/Anti-aliasing", "alias",
+                    "Anti-aliasing settings");
+    ctrl_radiobuttons(s, NULL, 'q', 2,
                       HELPCTX(appearance_font),
                       conf_radiobutton_handler,
                       I(CONF_font_quality),
-                      "Antialiased", I(FQ_ANTIALIASED),
-                      "Non-Antialiased", I(FQ_NONANTIALIASED),
+                      "No Anti-aliasing", I(FQ_NONANTIALIASED),
+                      "Greyscale", I(FQ_ANTIALIASED),
                       "ClearType", I(FQ_CLEARTYPE),
                       "Default", I(FQ_DEFAULT));
+    s = ctrl_getset(b, "Window/Anti-aliasing", "rendering",
+                    "Rendering mode settings");
+    ctrl_radiobuttons(s, NULL, 'r', 2,
+                      HELPCTX(no_help),
+                      conf_radiobutton_handler,
+                      I(CONF_rendering_mode),
+                      "GDI Natural", I(RM_GDI_NATURAL),
+                      "GDI Classic", I(RM_GDI_CLASSIC),
+                      "Natural", I(RM_NATURAL),
+                      "Symmetric", I(RM_SYMMETRIC),
+                      "Outline", I(RM_OUTLINE),
+                      "Default", I(RM_DEFAULT));
+    s = ctrl_getset(b, "Window/Anti-aliasing", "parameters",
+                    "");
+    ctrl_editbox(s, "Gamma (1-9999)/1000", NO_SHORTCUT, 20,
+                 HELPCTX(no_help),
+                 conf_editbox_handler,
+                 I(CONF_gamma),
+                 ED_INT);
+    ctrl_editbox(s, "Enhanced Contrast (0-100)", NO_SHORTCUT, 20,
+                 HELPCTX(no_help),
+                 conf_editbox_handler,
+                 I(CONF_enhanced_contrast),
+                 ED_INT);
+    ctrl_editbox(s, "ClearType Level (0-100)", NO_SHORTCUT, 20,
+                 HELPCTX(no_help),
+                 conf_editbox_handler,
+                 I(CONF_cleartype_level),
+                 ED_INT);
+
+    /* Border Style */
+    s = ctrl_getset(b, "Window/Appearance", "border",
+                    "Adjust the window border");
+    ctrl_radiobuttons(s, "Border style:", 't', 3,
+                      HELPCTX(no_help),
+                      conf_radiobutton_handler,
+                      I(CONF_border_style),
+                      "Normal", I(BS_NORMAL),
+                      "Square", I(BS_SQUARE),
+                      "Rounded", I(BS_ROUNDED));
+
+    /* baseline */
+    s = ctrl_getset(b, "Window/Appearance", "line",
+                    "Adjust the Line Gap and Baseline");
+    ctrl_editbox(s, "Line Gap:", NO_SHORTCUT, 20,
+                 HELPCTX(no_help),
+                 conf_editbox_handler,
+                 I(CONF_line_gap), ED_INT);
+
+    ctrl_editbox(s, "Baseline Offset:", NO_SHORTCUT, 20,
+                 HELPCTX(no_help),
+                 conf_editbox_handler,
+                 I(CONF_baseline_offset), ED_INT);
+
+    ctrl_editbox(s, "Baseline Offset (Fullwidth Chars):", NO_SHORTCUT, 20,
+                 HELPCTX(no_help),
+                 conf_editbox_handler,
+                 I(CONF_baseline_offset_fw), ED_INT);
+
+    /* frame rate */
+    s = ctrl_getset(b, "Window", "rate", "Adjust the update rate");
+    ctrl_editbox(s, "Screen update rate (fps) :", 'f', 20,
+                 HELPCTX(no_help),
+                 conf_editbox_handler,
+                 I(CONF_fps),
+                 ED_INT);
 
     /*
      * Cyrillic Lock is a horrid misfeature even on Windows, and
@@ -392,6 +483,113 @@ void win_setup_config_box(struct controlbox *b, HWND *hwndp, bool has_help,
                   HELPCTX(no_help),
                   conf_checkbox_handler, I(CONF_use_tsf));
 
+    /* HACK: PuttyTray / Reconnect */
+    s = ctrl_getset(b, "Connection", "reconnect", "Reconnect options");
+    ctrl_checkbox(s, "Attempt to reconnect on system wakeup", 'w', HELPCTX(no_help), conf_checkbox_handler, I(CONF_wakeup_reconnect));
+    ctrl_checkbox(s, "Attempt to reconnect on connection failure", 'f', HELPCTX(no_help), conf_checkbox_handler, I(CONF_failure_reconnect));
+
+    /* Background */
+    ctrl_settitle(b, "Window/Background", "Options controlling background");
+    s = ctrl_getset(b, "Window/Background", "background", "Background");
+    ctrl_radiobuttons(s, "Effect:", 'e', 4,
+                      HELPCTX(no_help),
+                      conf_radiobutton_handler,
+                      I(CONF_bg_effect),
+                      "Plane", I(0),
+                      "Glass", I(1));
+    ctrl_radiobuttons(s, "Wallpaper:", 'r', 2,
+                      HELPCTX(no_help),
+                      conf_radiobutton_handler,
+                      I(CONF_bg_wallpaper),
+                      "None", I(0),
+                      "Bitmap file", I(1),
+                      "Bitmap file on Desktop", I(2));
+
+    s = ctrl_getset(b, "Window/Background", "wallpaper", "Wallpaper");
+    ctrl_filesel(s, "Bitmap file:", NO_SHORTCUT,
+                 FILTER_IMAGE_FILES,
+                 FALSE, "Select bitmap file for background",
+                 HELPCTX(no_help),
+                 conf_filesel_handler, I(CONF_wp_file));
+    ctrl_checkbox(s, "Draw while moving/resizing", 'n',
+                  HELPCTX(no_help),
+                  conf_checkbox_handler,
+                  I(CONF_wp_moving));
+    ctrl_radiobuttons(s, "Position:", 'p', 3,
+                      HELPCTX(no_help),
+                      conf_radiobutton_handler,
+                      I(CONF_wp_position),
+                      "Fill", I(0),
+                      "Fit", I(1),
+                      "Stretch", I(2),
+                      "Tile", I(3),
+                      "Center", I(4));
+    ctrl_radiobuttons(s, "Horizontal Align:", 'l', 3,
+                      HELPCTX(no_help),
+                      conf_radiobutton_handler,
+                      I(CONF_wp_align),
+                      "Left", I(0),
+                      "Center", I(1),
+                      "Right", I(2));
+    ctrl_radiobuttons(s, "Vertical Align:", 'v', 3,
+                      HELPCTX(no_help),
+                      conf_radiobutton_handler,
+                      I(CONF_wp_valign),
+                      "Top", I(0),
+                      "Middle", I(1),
+                      "Bottom", I(2));
+
+    /* Transparency */
+    {
+        static const int CONF_alphas_pc[4][2] = {
+            {CONF_alphas_pc_cursor_active,
+             CONF_alphas_pc_cursor_inactive},
+            {CONF_alphas_pc_defauly_fg_active,
+             CONF_alphas_pc_defauly_fg_inactive},
+            {CONF_alphas_pc_degault_bg_active,
+             CONF_alphas_pc_degault_bg_inactive},
+            {CONF_alphas_pc_bg_active,
+             CONF_alphas_pc_bg_inactive}
+        };
+        ctrl_settitle(b, "Window/Transparency", "Options controlling transparency");
+	s = ctrl_getset(b, "Window/Transparency", "alpha_d_fg",
+			"Text Alpha Value (0-100)");
+	ctrl_editbox(s, "Active Window", NO_SHORTCUT, 20,
+		     HELPCTX(no_help),
+		     conf_editbox_handler,
+		     I(CONF_alphas_pc[ALPHA_DEFAULT_FG][BG_ACTIVE]),
+		     ED_INT);
+	ctrl_editbox(s, "Inactive Window", NO_SHORTCUT, 20,
+		     HELPCTX(no_help),
+		     conf_editbox_handler,
+		     I(CONF_alphas_pc[ALPHA_DEFAULT_FG][BG_INACTIVE]),
+		     ED_INT);
+	s = ctrl_getset(b, "Window/Transparency", "alpha_d_bg",
+			"Background Alpha Value (0-100)");
+	ctrl_editbox(s, "Active Window", NO_SHORTCUT, 20,
+		     HELPCTX(no_help),
+		     conf_editbox_handler,
+		     I(CONF_alphas_pc[ALPHA_BG][BG_ACTIVE]),
+		     ED_INT);
+	ctrl_editbox(s, "Inactive Window", NO_SHORTCUT, 20,
+		     HELPCTX(no_help),
+		     conf_editbox_handler,
+		     I(CONF_alphas_pc[ALPHA_BG][BG_INACTIVE]),
+		     ED_INT);
+	s = ctrl_getset(b, "Window/Transparency", "alpha_bg",
+			"Default Background Alpha Value (0-100)");
+        ctrl_editbox(s, "Active Window", NO_SHORTCUT, 20,
+                     HELPCTX(no_help),
+                     conf_editbox_handler,
+                     I(CONF_alphas_pc[ALPHA_DEFAULT_BG][BG_ACTIVE]),
+                     ED_INT);
+        ctrl_editbox(s, "Inactive Window", NO_SHORTCUT, 20,
+                     HELPCTX(no_help),
+                     conf_editbox_handler,
+                     I(CONF_alphas_pc[ALPHA_DEFAULT_BG][BG_INACTIVE]),
+                     ED_INT);
+    }
+
     /*
      * The Window/Wallpaper panel.
      */
@@ -488,6 +686,29 @@ void win_setup_config_box(struct controlbox *b, HWND *hwndp, bool has_help,
                      FILTER_ALL_FILES, false, "Select X authority file",
                      HELPCTX(ssh_tunnels_xauthority),
                      conf_filesel_handler, I(CONF_xauthfile));
+    }
+
+    /* ADB */
+    if (!midsession || (protocol == PROT_ADB)) {
+        ctrl_settitle(b, "Connection/ADB", "Options controlling ADB settings");
+        s = ctrl_getset(b, "Connection/ADB", "adbcfg", "Configure the ADB");
+
+        if (!midsession) {
+            ctrl_editbox(s, "Transport Type", NO_SHORTCUT, 60,
+                         HELPCTX(no_help),
+                         conf_editbox_handler,
+                         I(CONF_adb_transport),
+                         ED_STR);
+            ctrl_checkbox(s, "Auto start-server", NO_SHORTCUT,
+                          HELPCTX(no_help),
+                          conf_checkbox_handler,
+                          I(CONF_adb_start));
+        }
+
+        ctrl_checkbox(s, "Auto kill-server", NO_SHORTCUT,
+                      HELPCTX(no_help),
+                      conf_checkbox_handler,
+                      I(CONF_adb_kill));
     }
 }
 

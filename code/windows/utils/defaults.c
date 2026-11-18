@@ -12,7 +12,7 @@ FontSpec *platform_default_fontspec(const char *name)
         char fontname[128];
         FontSpec *ret;
         if (!get_l10n_setting("_DEFAULTFONTNAME_", fontname, sizeof fontname))
-            strcpy(fontname, "Courier New");
+            strcpy(fontname, "Consolas");
         ret = fontspec_new(fontname, 0, 0, 0);
 #ifdef ANSI_CHARSET
         {
@@ -107,6 +107,10 @@ FontSpec *platform_default_fontspec(const char *name)
 #endif// ANSI_CHARSET
         ret->height = 10;
         return ret;
+    } else if (!strcmp(name, "WideFont")) {
+        return fontspec_new("Meiryo", false, 11, ANSI_CHARSET);
+    } else if (!strcmp(name, "AltFont")) {
+        return fontspec_new("Segoe UI Emoji", false, 11, ANSI_CHARSET);
     } else {
         return fontspec_new_default();
     }

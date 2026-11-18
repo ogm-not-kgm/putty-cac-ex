@@ -17,7 +17,6 @@ typedef enum {
     FILTER_KEY_FILES, /* .ppk */
     FILTER_DYNLIB_FILES, /* whatever the host platform uses as shared libs */
     FILTER_SOUND_FILES, /* whatever kind of sound file we can use as bell */
-
     FILTER_IMAGE_FILES, /* basic image format(s) */
     FILTER_IMAGE_EX_FILES, /* various image formats */
     FILTER_ICON_FILES, /* icon files */
@@ -127,8 +126,8 @@ typedef enum {
     X(cyan_bold, "ANSI Cyan Bold")              \
     X(white, "ANSI White")                      \
     X(white_bold, "ANSI White Bold")            \
-    X(cursor_fg_ime, "Cursor Text(IME ON)")     \
-    X(cursor_bg_ime, "Cursor Colour(IME ON)")   \
+    X(cursor_fg_ime, "Cursor Text(IME)")        \
+    X(cursor_bg_ime, "Cursor Colour(IME)")      \
     /* end of list */
 
 #define OSCP_COLOUR_LIST(X)                     \
@@ -224,7 +223,7 @@ extern const int colour_indices_oscp_to_osc4[OSCP_NCOLOURS];
 
 #define DATTR_STARTRUN      0x80000000UL   /* start of redraw run */
 
-#define TDATTR_MASK         0x80000000UL
+#define TDATTR_MASK         0x80000000ULL
 #define TATTR_MASK (TDATTR_MASK)
 #define DATTR_MASK (TDATTR_MASK)
 
@@ -238,7 +237,7 @@ extern const int colour_indices_oscp_to_osc4[OSCP_NCOLOURS];
                                           wrapped to next line, so last
                                           single-width cell is empty */
 
-#define ATTR_INVALID 0x03FFFFU
+#define ATTR_INVALID 0x03FFFFUL
 
 /* Use the DC00 page for direct to font. */
 #define CSET_OEMCP   0x0000DC00UL      /* OEM Codepage DTF */
@@ -289,6 +288,13 @@ extern const int colour_indices_oscp_to_osc4[OSCP_NCOLOURS];
 #define ATTR_DEFFG   (OSC4_COLOUR_fg << ATTR_FGSHIFT)
 #define ATTR_DEFBG   (OSC4_COLOUR_bg << ATTR_BGSHIFT)
 #define ATTR_DEFAULT (ATTR_DEFFG | ATTR_DEFBG)
+
+/* Hyperlink */
+#define TATTR_URLMASK   0xFF00000000ULL
+#define TATTR_URLSHIFT  32
+#define TATTR_URLMAX    0xFF
+
+#define IGNORE_CHARS_MAX 8
 
 struct sesslist {
     int nsessions;
@@ -521,6 +527,7 @@ enum {
     PROT_SERIAL,
     /* PROT_SUPDUP is the historical RFC 734 protocol. */
     PROT_SUPDUP,
+    PROT_ADB,
     PROTOCOL_LIMIT, /* upper bound on number of protocols */
 };
 
@@ -571,6 +578,17 @@ enum {
 enum {
     FQ_DEFAULT, FQ_ANTIALIASED, FQ_NONANTIALIASED, FQ_CLEARTYPE
 };
+
+/* d2d > */
+enum {
+    RM_DEFAULT, RM_GDI_NATURAL, RM_GDI_CLASSIC, RM_NATURAL,
+    RM_SYMMETRIC, RM_OUTLINE
+};
+
+enum {
+    BS_NORMAL, BS_SQUARE, BS_ROUNDED, BS_GRADATION
+};
+/* < */
 
 enum {
     CURSOR_BLOCK, CURSOR_UNDERLINE, CURSOR_VERTICAL_LINE
@@ -773,6 +791,40 @@ char *default_description(const BackendVtable *backvt,
  * user-facing main modes that PuTTY can use to talk to some
  * destination: SSH, Telnet, serial port, pty, etc.
  */
+
+/* Hyperlink */
+enum {
+    URL_UNDERLINE_ALWAYS, URL_UNDERLINE_HOVER, URL_UNDERLINE_NEVER
+};
+
+/* Background */
+enum {
+    ALPHA_CURSOR, ALPHA_DEFAULT_FG, ALPHA_DEFAULT_BG, ALPHA_BG
+};
+
+enum {
+    BG_NONE, BG_FILE, BG_FILE_DESKTOP, BG_DESKTOP
+};
+
+enum {
+    BG_PLANE, BG_GLASS, BG_DOUBLE_GLASS
+};
+
+enum {
+    BG_ACTIVE, BG_INACTIVE
+};
+
+enum {
+    WP_FILL, WP_FIT, WP_STRETCH, WP_TILE, WP_FIX
+};
+
+enum {
+    WP_LEFT, WP_CENTER, WP_RIGHT
+};
+
+enum {
+    WP_TOP, WP_MIDDLE, WP_BOTTOM
+};
 
 struct Backend {
     const BackendVtable *vt;
@@ -1700,14 +1752,14 @@ struct TermWinVtable {
     bool (*setup_draw_ctx)(TermWin *);
     /* Draw text in the window, during a painting operation */
     void (*draw_text)(TermWin *, int x, int y, wchar_t *text, int len,
-                      unsigned long attrs, int line_attrs, truecolour tc);
+                      unsigned long long attrs, int line_attrs, truecolour tc);
     /* Draw the visible cursor. Expects you to have called do_text
      * first (because it might just draw an underline over a character
      * presumed to exist already), but also expects you to pass in all
      * the details of the character under the cursor (because it might
      * redraw it in different colours). */
     void (*draw_cursor)(TermWin *, int x, int y, wchar_t *text, int len,
-                        unsigned long attrs, int line_attrs, truecolour tc);
+                        unsigned long long attrs, int line_attrs, truecolour tc);
     /* Draw the sigil indicating that a line of text has come from
      * PuTTY itself rather than the far end (defence against end-of-
      * authentication spoofing) */
@@ -1788,11 +1840,11 @@ static inline bool win_setup_draw_ctx(TermWin *win)
 { return win->vt->setup_draw_ctx(win); }
 static inline void win_draw_text(
     TermWin *win, int x, int y, wchar_t *text, int len,
-    unsigned long attrs, int line_attrs, truecolour tc)
+    unsigned long long attrs, int line_attrs, truecolour tc)
 { win->vt->draw_text(win, x, y, text, len, attrs, line_attrs, tc); }
 static inline void win_draw_cursor(
     TermWin *win, int x, int y, wchar_t *text, int len,
-    unsigned long attrs, int line_attrs, truecolour tc)
+    unsigned long long attrs, int line_attrs, truecolour tc)
 { win->vt->draw_cursor(win, x, y, text, len, attrs, line_attrs, tc); }
 static inline void win_draw_trust_sigil(TermWin *win, int x, int y)
 { win->vt->draw_trust_sigil(win, x, y); }
@@ -2289,6 +2341,11 @@ extern const struct BackendVtable sshconn_backend;
 extern const struct BackendVtable supdup_backend;
 
 /*
+ * Exports from adb.c.
+ */
+extern const struct BackendVtable adb_backend;
+
+/*
  * Exports from ldisc.c.
  */
 Ldisc *ldisc_create(Conf *, Terminal *, Backend *, Seat *);
@@ -2365,6 +2422,10 @@ extern const char commitid[];
  */
 /* void init_ucs(void); -- this is now in platform-specific headers */
 bool is_dbcs_leadbyte(int codepage, char byte);
+int mb_to_wc(int codepage, int flags, const char *mbstr, int mblen,
+             wchar_t *wcstr, int wclen);
+int wc_to_mb(int codepage, int flags, const wchar_t *wcstr, int wclen,
+             char *mbstr, int mblen, const char *defchr);
 /* For put_mb_to_wc / put_wc_to_mb, see marshal.h */
 wchar_t xlat_uskbd2cyrllic(int ch);
 int check_compose(int first, int second);
@@ -2660,6 +2721,7 @@ char *get_username(void);              /* return value needs freeing */
 char *get_random_data(int bytes, const char *device); /* used in cmdgen.c */
 char filename_char_sanitise(char c);   /* rewrite special pathname chars */
 bool open_for_write_would_lose_data(const Filename *fn);
+void exec_browser(char *url);
 
 /*
  * Exports and imports from timing.c.
@@ -2915,4 +2977,8 @@ void sleep_ticks(int ticks);
 #define FROM_SURROGATES(wch1, wch2) \
     (0x10000 + (((wch1) & 0x3FF) << 10) + ((wch2) & 0x3FF))
 
+#endif
+
+#ifndef CW_USEDEFAULT
+#define CW_USEDEFAULT ((int)0)
 #endif

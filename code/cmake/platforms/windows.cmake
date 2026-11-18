@@ -165,7 +165,8 @@ if(CMAKE_C_COMPILER_ID MATCHES "MSVC")
 
   set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} \
 /w14703 /we4013 /we4047 /we4076 /we4133 \
-/wd4244 /wd4267 /wd4018 /wd4146 /wd4293 /wd4090")
+/wd4244 /wd4267 /wd4018 /wd4146 /wd4293 /wd4090 /GL /std:c++latest")
+  set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} /DD2DBG=__noop")
 
   # Set the warning level to 1
   #  - 4703: Potentially uninitialized local pointer variable 'name' used
@@ -174,10 +175,11 @@ if(CMAKE_C_COMPILER_ID MATCHES "MSVC")
 endif()
 
 if(CMAKE_C_COMPILER_FRONTEND_VARIANT MATCHES "MSVC")
-  set(CMAKE_C_LINK_FLAGS "${CMAKE_C_LINK_FLAGS} /dynamicbase /nxcompat")
+  set(CMAKE_C_LINK_FLAGS "${CMAKE_C_LINK_FLAGS} /dynamicbase /nxcompat /OPT:REF,ICF /LTCG")
 endif()
 
 set(platform_libraries
+  d2d1.lib WindowsCodecs.lib dwrite.lib dwmapi.lib Wtsapi32.lib
   advapi32.lib comdlg32.lib gdi32.lib imm32.lib
   ole32.lib shell32.lib user32.lib ws2_32.lib kernel32.lib)
 
@@ -194,6 +196,27 @@ if(PUTTY_LINK_MAPS)
     message(WARNING
       "Don't know how to generate link maps on this toolchain")
   endif()
+endif()
+
+if(MSVC)
+  set(CompilerFlags
+    CMAKE_C_FLAGS
+    CMAKE_C_FLAGS_DEBUG
+    CMAKE_C_FLAGS_RELEASE)
+  foreach(CompilerFlag ${CompilerFlags})
+    string(REPLACE "/MD" "/MT" ${CompilerFlag} "${${CompilerFlag}}")
+  endforeach()
+  set(CMAKE_C_LINK_FLAGS "${CMAKE_C_LINK_FLAGS} /OPT:REF,ICF /LTCG")
+  if(PGO MATCHES "pgi")
+    set(CMAKE_C_LINK_FLAGS "${CMAKE_C_LINK_FLAGS} /GENPROFILE")
+  endif()
+  if(PGO MATCHES "pgo")
+    set(CMAKE_C_LINK_FLAGS "${CMAKE_C_LINK_FLAGS} /USEPROFILE")
+  endif()
+  set(CMAKE_CXX_FLAGS "${CMAKE_C_FLAGS}")
+  set(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_C_FLAGS_DEBUG}")
+  set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_C_FLAGS_RELEASE}")
+  set(CMAKE_CXX_LINK_FLAGS "${CMAKE_C_LINK_FLAGS}")
 endif()
 
 # Write out a file in the cmake output directory listing the

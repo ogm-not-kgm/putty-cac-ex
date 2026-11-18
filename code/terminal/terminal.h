@@ -30,7 +30,7 @@ struct termchar {
      * saying FULL-TERMCHAR.
      */
     unsigned long chr;
-    unsigned long attr;
+    unsigned long long attr;
     truecolour truecolour;
 
     /*
@@ -165,6 +165,7 @@ struct terminal_tag {
 
     bool bracketed_paste, bracketed_paste_active;
     bool no_bracketed_paste;           /* disabled in configuration */
+    int osc_clipping;
 
     int cset_attr[2];
 
@@ -189,7 +190,7 @@ struct terminal_tag {
 #define ANSI(x,y)       ((x)+((y)*256))
 #define ANSI_QUE(x)     ANSI(x,1)
 
-#define OSC_STR_MAX 2048
+#define OSC_STR_MAX 16384
     OscType osc_type;
     int osc_strlen;
     char osc_string[OSC_STR_MAX + 1];
@@ -400,6 +401,16 @@ struct terminal_tag {
     bool win_refresh_pending;
     bool win_scrollbar_update_pending;
     bool win_palette_pending;
+
+    /* Hyperlink */
+    bool url_enable;
+    bool url_ctrl_click;
+    /* Ignore Chars */
+    unsigned long ignore_uchars[IGNORE_CHARS_MAX + 1];
+    int ignore_length;
+
+    //d2d
+    int update_delay;
     unsigned win_palette_pending_min, win_palette_pending_limit;
 
     /*

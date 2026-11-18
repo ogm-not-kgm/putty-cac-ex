@@ -36,6 +36,7 @@ extern "C"
 #undef GetSaveFileNameA
 #undef GetSaveFileNameW
 #undef sprintf
+#undef _vsnprintf
 #undef vsnprintf
 #undef dupprintf
 #pragma pop_macro("max")

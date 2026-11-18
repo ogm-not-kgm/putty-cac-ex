@@ -316,6 +316,7 @@ static INT_PTR CALLBACK LogProc(HWND hwnd, UINT msg,
                                0, (LPARAM) events_circular[(circular_first + i) % LOGEVENT_CIRCULAR_MAX]);
         l10n_created_window(hwnd);
         update_logbox_horizontal_extent(hwnd);
+        l10n_created_window (hwnd);
 
         return 1;
       }
@@ -767,6 +768,7 @@ void defuse_showwindow(void)
         HWND hwnd;
         hwnd = CreateDialog(hinst, MAKEINTRESOURCE(IDD_ABOUTBOX),
                             NULL, NullDlgProc);
+        l10n_created_window (hwnd);
         ShowWindow(hwnd, SW_HIDE);
         SetActiveWindow(hwnd);
         DestroyWindow(hwnd);
@@ -1377,6 +1379,7 @@ static INT_PTR CAConfigProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam,
         dlg_refresh(NULL, pds->dp);    /* and set up control values */
 
         pds_initdialog_finish(pds);
+        l10n_created_window (hwnd);
         return 0;
 
       default:

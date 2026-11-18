@@ -160,6 +160,7 @@ add_executable(pscp
 be_list(pscp PSCP SSH)
 target_link_libraries(pscp
   sftpclient eventloop console sshclient settings network crypto utils
+  iso2022
   ${platform_libraries})
 installed_program(pscp)
 
@@ -169,6 +170,7 @@ add_executable(psftp
 be_list(psftp PSFTP SSH)
 target_link_libraries(psftp
   sftpclient eventloop console sshclient settings network crypto utils
+  iso2022
   ${platform_libraries})
 installed_program(psftp)
 
@@ -183,6 +185,7 @@ add_executable(psocks
   ssh/portfwd.c)
 target_link_libraries(psocks
   eventloop console network utils
+  iso2022
   ${platform_libraries})
 
 add_executable(test_conf
@@ -196,7 +199,7 @@ add_executable(test_conf
   proxy/noproxy.c # FIXME: move this to stubs
 )
 be_list(test_conf TestConf SSH SERIAL OTHERBACKENDS)
-target_link_libraries(test_conf sshclient otherbackends settings network crypto utils ${platform_libraries})
+target_link_libraries(test_conf sshclient otherbackends settings network crypto utils iso2022 ${platform_libraries})
 
 foreach(subdir ${platform} ${extra_dirs})
   add_subdirectory(${subdir})

@@ -39,6 +39,12 @@ static ptrlen cmdline_demo_keystr;
 static Filename *demo_screenshot_filename = NULL;
 
 /*
+ * Export from l10n
+ */
+BOOL l10nSetDlgItemText(HWND dialog, int id, LPCSTR text);
+BOOL l10nAppendMenu(HMENU menu, UINT flags, UINT id, LPCSTR text);
+
+/*
  * Print a modal (Really Bad) message box and perform a fatal exit.
  */
 void modalfatalbox(const char *fmt, ...)
@@ -1552,36 +1558,36 @@ static INT_PTR CALLBACK MainDlgProc(HWND hwnd, UINT msg,
             menu = CreateMenu();
 
             menu1 = CreateMenu();
-            AppendMenu(menu1, MF_ENABLED, IDC_LOAD, "&Load private key");
-            AppendMenu(menu1, MF_ENABLED, IDC_SAVEPUB, "Save p&ublic key");
-            AppendMenu(menu1, MF_ENABLED, IDC_SAVE, "&Save private key");
+            l10nAppendMenu(menu1, MF_ENABLED, IDC_LOAD, "&Load private key");
+            l10nAppendMenu(menu1, MF_ENABLED, IDC_SAVEPUB, "Save p&ublic key");
+            l10nAppendMenu(menu1, MF_ENABLED, IDC_SAVE, "&Save private key");
             AppendMenu(menu1, MF_SEPARATOR, 0, 0);
-            AppendMenu(menu1, MF_ENABLED, IDC_QUIT, "E&xit");
-            AppendMenu(menu, MF_POPUP | MF_ENABLED, (UINT_PTR) menu1, "&File");
+            l10nAppendMenu(menu1, MF_ENABLED, IDC_QUIT, "E&xit");
+            l10nAppendMenu(menu, MF_POPUP | MF_ENABLED, (UINT_PTR) menu1, "&File");
             state->filemenu = menu1;
 
             menu1 = CreateMenu();
-            AppendMenu(menu1, MF_ENABLED, IDC_GENERATE, "&Generate key pair");
+            l10nAppendMenu(menu1, MF_ENABLED, IDC_GENERATE, "&Generate key pair");
             AppendMenu(menu1, MF_SEPARATOR, 0, 0);
-            AppendMenu(menu1, MF_ENABLED, IDC_ADDCERT,
+            l10nAppendMenu(menu1, MF_ENABLED, IDC_ADDCERT,
                        "Add &certificate to key");
-            AppendMenu(menu1, MF_ENABLED, IDC_REMCERT,
+            l10nAppendMenu(menu1, MF_ENABLED, IDC_REMCERT,
                        "Remove certificate from key");
             AppendMenu(menu1, MF_SEPARATOR, 0, 0);
-            AppendMenu(menu1, MF_ENABLED, IDC_KEYSSH1, "SSH-&1 key (RSA)");
-            AppendMenu(menu1, MF_ENABLED, IDC_KEYSSH2RSA, "SSH-2 &RSA key");
-            AppendMenu(menu1, MF_ENABLED, IDC_KEYSSH2DSA, "SSH-2 &DSA key");
-            AppendMenu(menu1, MF_ENABLED, IDC_KEYSSH2ECDSA, "SSH-2 &ECDSA key");
-            AppendMenu(menu1, MF_ENABLED, IDC_KEYSSH2EDDSA, "SSH-2 EdD&SA key");
+            l10nAppendMenu(menu1, MF_ENABLED, IDC_KEYSSH1, "SSH-&1 key (RSA)");
+            l10nAppendMenu(menu1, MF_ENABLED, IDC_KEYSSH2RSA, "SSH-2 &RSA key");
+            l10nAppendMenu(menu1, MF_ENABLED, IDC_KEYSSH2DSA, "SSH-2 &DSA key");
+            l10nAppendMenu(menu1, MF_ENABLED, IDC_KEYSSH2ECDSA, "SSH-2 &ECDSA key");
+            l10nAppendMenu(menu1, MF_ENABLED, IDC_KEYSSH2EDDSA, "SSH-2 EdD&SA key");
             AppendMenu(menu1, MF_SEPARATOR, 0, 0);
-            AppendMenu(menu1, MF_ENABLED, IDC_PRIMEGEN_PROB,
+            l10nAppendMenu(menu1, MF_ENABLED, IDC_PRIMEGEN_PROB,
                        "Use probable primes (fast)");
-            AppendMenu(menu1, MF_ENABLED, IDC_PRIMEGEN_MAURER_SIMPLE,
+            l10nAppendMenu(menu1, MF_ENABLED, IDC_PRIMEGEN_MAURER_SIMPLE,
                        "Use proven primes (slower)");
-            AppendMenu(menu1, MF_ENABLED, IDC_PRIMEGEN_MAURER_COMPLEX,
+            l10nAppendMenu(menu1, MF_ENABLED, IDC_PRIMEGEN_MAURER_COMPLEX,
                        "Use proven primes with even distribution (slowest)");
             AppendMenu(menu1, MF_SEPARATOR, 0, 0);
-            AppendMenu(menu1, MF_ENABLED, IDC_RSA_STRONG,
+            l10nAppendMenu(menu1, MF_ENABLED, IDC_RSA_STRONG,
                        "Use \"strong\" primes as RSA key factors");
             AppendMenu(menu1, MF_SEPARATOR, 0, 0);
             AppendMenu(menu1, MF_ENABLED, IDC_PPK_PARAMS,
@@ -1595,23 +1601,23 @@ static INT_PTR CALLBACK MainDlgProc(HWND hwnd, UINT msg,
             state->keymenu = menu1;
 
             menu1 = CreateMenu();
-            AppendMenu(menu1, MF_ENABLED, IDC_IMPORT, "&Import key");
+            l10nAppendMenu(menu1, MF_ENABLED, IDC_IMPORT, "&Import key");
             AppendMenu(menu1, MF_SEPARATOR, 0, 0);
-            AppendMenu(menu1, MF_ENABLED, IDC_EXPORT_OPENSSH_AUTO,
+            l10nAppendMenu(menu1, MF_ENABLED, IDC_EXPORT_OPENSSH_AUTO,
                        "Export &OpenSSH key");
-            AppendMenu(menu1, MF_ENABLED, IDC_EXPORT_OPENSSH_NEW,
+            l10nAppendMenu(menu1, MF_ENABLED, IDC_EXPORT_OPENSSH_NEW,
                        "Export &OpenSSH key (force new file format)");
-            AppendMenu(menu1, MF_ENABLED, IDC_EXPORT_SSHCOM,
+            l10nAppendMenu(menu1, MF_ENABLED, IDC_EXPORT_SSHCOM,
                        "Export &ssh.com key");
-            AppendMenu(menu, MF_POPUP | MF_ENABLED, (UINT_PTR) menu1,
+            l10nAppendMenu(menu, MF_POPUP | MF_ENABLED, (UINT_PTR) menu1,
                        "Con&versions");
             state->cvtmenu = menu1;
 
             menu1 = CreateMenu();
-            AppendMenu(menu1, MF_ENABLED, IDC_ABOUT, "&About");
+            l10nAppendMenu(menu1, MF_ENABLED, IDC_ABOUT, "&About");
             if (has_help())
-                AppendMenu(menu1, MF_ENABLED, IDC_GIVEHELP, "&Help");
-            AppendMenu(menu, MF_POPUP | MF_ENABLED, (UINT_PTR) menu1, "&Help");
+                l10nAppendMenu(menu1, MF_ENABLED, IDC_GIVEHELP, "&Help");
+            l10nAppendMenu(menu, MF_POPUP | MF_ENABLED, (UINT_PTR) menu1, "&Help");
 
             SetMenu(hwnd, menu);
         }

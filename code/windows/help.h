@@ -148,6 +148,7 @@ typedef const char *HelpCtx;
 #define WINHELP_CTX_selection_shiftdrag "config-mouseshift"
 #define WINHELP_CTX_selection_rect "config-rectselect"
 #define WINHELP_CTX_selection_linedraw "config-linedrawpaste"
+#define WINHELP_CTX_ignore_chars "config-ignorechars"
 #define WINHELP_CTX_selection_autocopy "config-selection-autocopy"
 #define WINHELP_CTX_selection_clipactions "config-selection-clipactions"
 #define WINHELP_CTX_selection_pastectrl "config-paste-ctrl-char"

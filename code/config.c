@@ -212,6 +212,9 @@ static void config_host_handler(dlgcontrol *ctrl, dlgparam *dlg,
              */
             dlg_label_change(ctrl, dlg, "Serial line");
             dlg_editbox_set(ctrl, dlg, conf_get_str(conf, CONF_serline));
+        } else if (conf_get_int(conf, CONF_protocol) == PROT_ADB) {
+            dlg_label_change(ctrl, dlg, "transport type");
+            dlg_editbox_set(ctrl, dlg, conf_get_str(conf, CONF_adb_transport));
         } else {
             dlg_label_change(ctrl, dlg, HOST_BOX_TITLE);
             dlg_editbox_set(ctrl, dlg, conf_get_str(conf, CONF_host));
@@ -220,6 +223,8 @@ static void config_host_handler(dlgcontrol *ctrl, dlgparam *dlg,
         char *s = dlg_editbox_get(ctrl, dlg);
         if (conf_get_int(conf, CONF_protocol) == PROT_SERIAL)
             conf_set_str(conf, CONF_serline, s);
+        else if (conf_get_int(conf, CONF_protocol) == PROT_ADB)
+            conf_set_str(conf, CONF_adb_transport, s);
         else
             conf_set_str(conf, CONF_host, s);
         sfree(s);
@@ -703,6 +708,7 @@ static void codepage_handler(dlgcontrol *ctrl, dlgparam *dlg,
     if (event == EVENT_REFRESH) {
         int i;
         const char *cp, *thiscp;
+        char *lc;
         dlg_update_start(ctrl, dlg);
         char *thiscp_t = thiscp = conf_get_str(conf, CONF_line_codepage);
         char t_buf[128];
@@ -2864,7 +2870,11 @@ void setup_config_box(struct controlbox *b, bool midsession,
                   HELPCTX(appearance_cursor),
                   conf_checkbox_handler, I(CONF_blink_cur));
 
-    s = ctrl_getset(b, "Window/Appearance", "font",
+    /* d2d */
+    ctrl_settitle(b, "Window/Font",
+		  "Options controlling font");
+
+    s = ctrl_getset(b, "Window/Font", "font",
                     "Font settings");
     ctrl_fontsel(s, "Font used in the terminal window", 'n',
                  HELPCTX(appearance_font),
@@ -3011,6 +3021,20 @@ void setup_config_box(struct controlbox *b, bool midsession,
     ccd->button->column = 1;
     ctrl_columns(s, 1, 100);
 
+    s = ctrl_getset(b, "Window/Selection/Copy", "format",
+                    "Formatting of pasted characters");
+    ctrl_editbox(s, "Ignore characters", 'i', 50,
+                 HELPCTX(ignore_chars),
+                 conf_editbox_handler, I(CONF_ignore_chars), ED_STR);
+
+    s = ctrl_getset(b, "Window/Selection/Copy", "clipboard", "Allowed maximum number of characters");
+    ctrl_editbox(s, "Clipboard modify", 'm', 20,
+                 HELPCTX(no_help),
+                 conf_editbox_handler, I(CONF_clip_modify), ED_INT);
+    ctrl_editbox(s, "Clipboard query", 'y', 20,
+                 HELPCTX(no_help),
+                 conf_editbox_handler, I(CONF_clip_query), ED_INT);
+
     /*
      * The Window/Colours panel.
      */
@@ -3064,6 +3088,25 @@ void setup_config_box(struct controlbox *b, bool midsession,
     cd->button->column = 1;
     cd->colourspace = COLOURSPACE_HSL;
     ctrl_columns(s, 1, 100);
+
+    /* Hyperlink */
+    ctrl_settitle(b, "Window/Hyperlinks",
+                  "Options controlling behaviour of hyperlinks");
+    s = ctrl_getset(b, "Window/Hyperlinks", "general",
+                    "General options for hyperlinks");
+    ctrl_checkbox(s, "Enable hyperlinks", NO_SHORTCUT,
+                  HELPCTX(no_help),
+                  conf_checkbox_handler, I(CONF_url_enable));
+    ctrl_checkbox(s, "Press Ctrl to click hyperlinks", NO_SHORTCUT,
+                  HELPCTX(no_help),
+                  conf_checkbox_handler, I(CONF_url_ctrl_click));
+    ctrl_radiobuttons(s, "Underline hyperlinks:", NO_SHORTCUT, 1,
+                      HELPCTX(no_help),
+                      conf_radiobutton_handler,
+                      I(CONF_url_underline),
+                      "Always", NO_SHORTCUT, I(URL_UNDERLINE_ALWAYS),
+                      "When hovered upon", NO_SHORTCUT, I(URL_UNDERLINE_HOVER),
+                      "Never", NO_SHORTCUT, I(URL_UNDERLINE_NEVER));
 
     /*
      * The Connection panel. This doesn't show up if we're in a

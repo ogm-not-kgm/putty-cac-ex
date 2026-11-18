@@ -124,7 +124,7 @@ static bool do_filereq_a(
         break;
       case FILTER_ICON_FILES:
         of.lpstrFilter = "Icon Files (*.ico)\0*.ico\0"
-            "Module Files (*.exe;*.dll)\0*.exe;*.dll\0" \
+            "Module Files (*.exe;*.dll)\0*.exe;*.dll\0"
             "All Files (*.*)\0*\0\0\0";
         of.lpstrDefExt = ".ico";
         break;
@@ -201,18 +201,18 @@ static bool do_filereq_w(
         break;
       case FILTER_IMAGE_FILES:
         of.lpstrFilter = L"Bitmap Files (*.bmp)\0*.bmp\0"
-            "All Files (*.*)\0*\0\0\0";
+            L"All Files (*.*)\0*\0\0\0";
         of.lpstrDefExt = L".bmp";
         break;
       case FILTER_IMAGE_EX_FILES:
         of.lpstrFilter = L"Image Files (*.bmp;*.jpg;*.png;...)\0*.bmp;*.jpg;*.jpeg;*.png;*.tiff;*.wmf;*.gif\0"
-            "All Files (*.*)\0*\0\0\0";
+            L"All Files (*.*)\0*\0\0\0";
         of.lpstrDefExt = L".bmp";
         break;
       case FILTER_ICON_FILES:
         of.lpstrFilter = L"Icon Files (*.ico)\0*.ico\0"
-            "Module Files (*.exe;*.dll)\0*.exe;*.dll\0" \
-            "All Files (*.*)\0*\0\0\0";
+            L"Module Files (*.exe;*.dll)\0*.exe;*.dll\0"
+            L"All Files (*.*)\0*\0\0\0";
         of.lpstrDefExt = L".ico";
         break;
     }

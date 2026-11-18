@@ -334,7 +334,6 @@ static void ldisc_input_queue_callback(void *ctx)
         iso2022 = &ldisc->term->ucsdata->iso2022_data;
     if (iso2022)
         iso2022_tbufclear(iso2022);
-
     /*
      * Toplevel callback that is triggered whenever the input queue
      * lengthens.

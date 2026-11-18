@@ -114,6 +114,7 @@ settings_r *open_settings_r(const char *sessionname)
     }
     strbuf *sb = strbuf_new();
     escape_registry_key(sessionname, sb);
+
     HKEY sesskey = open_regkey_ro(HKEY_CURRENT_USER, puttystr, sb->s);
     strbuf_free(sb);
 
@@ -758,6 +759,23 @@ static HANDLE access_random_seed(int action)
      * writing to the best location in which we can _create_ one).
      */
 
+    if (get_use_inifile()) {
+        char seedpath[2 * MAX_PATH + 10] = "\0";
+        if (GetPrivateProfileString("Generic", "RandSeedFile", "\n:", seedpath, sizeof(seedpath), inifile) >= sizeof(seedpath) - 1 || seedpath[0] == '\n') {
+            char* p;
+            strcpy(seedpath, inifile);
+            if ((p = strrchr(seedpath, '\\')) != NULL) {
+                *p = '\0';
+            } else {
+                modalfatalbox("wrong putty.ini file path '%s'", seedpath);
+            }
+            strcat(seedpath, "\\putty.rnd");
+        }
+        if (*seedpath && try_random_seed(seedpath, action, &rethandle))
+            return rethandle;
+        return INVALID_HANDLE_VALUE;
+    }
+
     /*
      * First, try the location specified by the user in the
      * Registry, if any.
@@ -906,7 +924,6 @@ static int transform_jumplist_registry(
 {
     HKEY rkey;
     strbuf *oldlist;
-
     /* Get current list of saved sessions in the registry. */
     if (get_use_inifile()) {
         rkey = NULL;
@@ -918,7 +935,6 @@ static int transform_jumplist_registry(
 
         oldlist = get_reg_multi_sz(rkey, reg_jumplist_value);
     }
-
     if (!oldlist) {
         /* Start again with the empty list. */
         oldlist = strbuf_new();
