@@ -23,7 +23,7 @@ foreach $f (@ARGV) {
         # enough. We just have to adjust the declaration line so that it
         # has the right name, linkage and storage class.
         @lines = ();
-        open XPM, "convert $f xpm:- |";
+        open XPM, "magick convert $f xpm:- |";
         push @lines, $_ while <XPM>;
         close XPM;
         die "XPM from $f in unexpected format\n"
@@ -36,7 +36,7 @@ foreach $f (@ARGV) {
         close SIZE;
         ($w, $h) = split / /, $wh;
         die "bad size from $f" unless $w > 0 && $h > 0;
-        open RGB, "-|", "convert", "-depth", "8", $f, "rgba:-";
+        open RGB, "-|", "magick convert", "-depth", "8", $f, "rgba:-";
         $rgbdata = '';
         1 while read RGB, $rgbdata, 4096, length $rgbdata;
         close RGB;

@@ -1,5 +1,6 @@
 cmake_minimum_required(VERSION 3.7...3.28)
-project(putty LANGUAGES C)
+cmake_policy(SET CMP0091 NEW)
+project(putty LANGUAGES C CXX)
 if(PUTTY_CAC)
 enable_language(CXX)
 endif()
@@ -78,6 +79,8 @@ add_library(otherbackends STATIC
 add_subdirectory(otherbackends)
 
 add_executable(testcrypt
+  ${CMAKE_SOURCE_DIR}/stubs/no-iso2022.c
+  utils/dupprintf.c
   test/testcrypt.c sshpubk.c ssh/crc-attack-detector.c)
 target_link_libraries(testcrypt
   keygen crypto utils ${platform_libraries})
@@ -147,10 +150,12 @@ be_list(plink Plink SSH SERIAL OTHERBACKENDS)
 target_link_libraries(plink
   eventloop noterminal console sshclient otherbackends settings network crypto
   utils
+  iso2022
   ${platform_libraries})
 installed_program(plink)
 
 add_executable(pscp
+  ${CMAKE_SOURCE_DIR}/stubs/no-iso2022.c
   pscp.c)
 be_list(pscp PSCP SSH)
 target_link_libraries(pscp
@@ -159,6 +164,7 @@ target_link_libraries(pscp
 installed_program(pscp)
 
 add_executable(psftp
+  ${CMAKE_SOURCE_DIR}/stubs/no-iso2022.c
   psftp.c)
 be_list(psftp PSFTP SSH)
 target_link_libraries(psftp
@@ -169,9 +175,11 @@ installed_program(psftp)
 add_executable(psocks
   ${platform}/psocks.c
   psocks.c
+  stubs/no-ini.c
   stubs/no-rand.c
   proxy/nocproxy.c
   proxy/nosshproxy.c
+  ${CMAKE_SOURCE_DIR}/stubs/no-iso2022.c
   ssh/portfwd.c)
 target_link_libraries(psocks
   eventloop console network utils

@@ -1727,6 +1727,7 @@ int platform_ssh_share(const char *name, Conf *conf,
                        Plug *downplug, Plug *upplug, Socket **sock,
                        char **logtext, char **ds_err, char **us_err,
                        bool can_upstream, bool can_downstream);
+int platform_ssh_share_ask(const char *name);
 void platform_ssh_share_cleanup(const char *name);
 
 /*

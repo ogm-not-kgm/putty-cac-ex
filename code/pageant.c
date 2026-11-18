@@ -488,6 +488,21 @@ static int count_keys(int ssh_version)
 int pageant_count_ssh1_keys(void) { return count_keys(1); }
 int pageant_count_ssh2_keys(void) { return count_keys(2); }
 
+int accept_agent_request_pk_pub(int type, const PageantPublicKey *pub)
+{
+    PageantPrivateKey *priv = pub_to_priv(pub);
+    const RSAKey *rsa_key = priv->sort.ssh_version == 1 ? priv->rkey : NULL;
+    const ssh_key *priv_key = priv->sort.ssh_version == 2 ? priv->skey : NULL;
+    if (rsa_key == NULL && priv_key == NULL) {
+        /* key is encrypted. allow without confirmation since user will be asked for a passphrase anyway */
+        return 1;
+    }
+    ssh2_userkey priv_ukey;
+    priv_ukey.key = priv_key;
+    priv_ukey.comment = pub->comment;
+    return accept_agent_request(type, rsa_key, &priv_ukey);
+}
+
 /*
  * Common code to add a key to the trees. We fill in as many fields
  * here as we can share between SSH versions: the ptrlens in the
@@ -1335,7 +1350,7 @@ enum Extension { KNOWN_EXTENSIONS(DECL_EXT_ENUM) EXT_UNKNOWN };
 static const ptrlen extension_names[] = { KNOWN_EXTENSIONS(DEF_EXT_NAMES) };
 
 static PageantAsyncOp *pageant_make_op(
-    PageantClient *pc, PageantClientRequestId *reqid, ptrlen msgpl)
+    PageantClient *pc, PageantClientRequestId *reqid, ptrlen msgpl, bool is_remote_call)
 {
     BinarySource msg[1];
     strbuf *sb = strbuf_new_nm();
@@ -1352,6 +1367,7 @@ static PageantAsyncOp *pageant_make_op(
         goto responded;
     }
 
+    notify_agent_make_op(type);
     switch (type) {
       case SSH1_AGENTC_REQUEST_RSA_IDENTITIES: {
         /*
@@ -1453,6 +1469,10 @@ static PageantAsyncOp *pageant_make_op(
             fail("key not found");
             goto challenge1_cleanup;
         }
+        if (is_remote_call && !accept_agent_request_pk_pub(type, pub)) {
+            fail("user declined");
+            goto challenge1_cleanup;
+        }
         priv = pub_to_priv(pub);
         response = rsa_ssh1_decrypt(challenge, priv->rkey);
 
@@ -1537,6 +1557,11 @@ static PageantAsyncOp *pageant_make_op(
         else
             pageant_client_log(pc, reqid, "no signature flags");
 
+        if (is_remote_call && !accept_agent_request_pk_pub(type, pub)) {
+            fail("user declined");
+            goto responded;
+        }
+
         strbuf_free(sb); /* no immediate response */
 
         PageantSignOp *so = snew(PageantSignOp);
@@ -1598,6 +1623,10 @@ static PageantAsyncOp *pageant_make_op(
 
         if (!rsa_verify(key)) {
             fail("key is invalid");
+            goto add1_cleanup;
+        }
+        if (is_remote_call && !accept_agent_request(type, key, NULL)) {
+            fail("user declined");
             goto add1_cleanup;
         }
 
@@ -1694,6 +1723,10 @@ static PageantAsyncOp *pageant_make_op(
             goto add2_cleanup;
         }
 
+        if (is_remote_call && !accept_agent_request(type, NULL, key)) {
+            fail("user declined");
+            goto add2_cleanup;
+        }
         if (!pc->suppress_logging) {
             char *fingerprint = ssh2_fingerprint(key->key, SSH_FPTYPE_DEFAULT);
             pageant_client_log(pc, reqid, "submitted key: %s %s",
@@ -1753,7 +1786,9 @@ static PageantAsyncOp *pageant_make_op(
 
         pub = findpubkey1(&reqkey);
         freersakey(&reqkey);
-        if (pub) {
+        if (pub && is_remote_call && !accept_agent_request_pk_pub(type, pub)) {
+            fail("user declined");
+        } else if (pub) {
             pageant_client_log(pc, reqid, "found with comment: %s",
                                pub->comment);
 
@@ -1816,6 +1851,10 @@ static PageantAsyncOp *pageant_make_op(
         pageant_client_log(pc, reqid,
                            "request: SSH1_AGENTC_REMOVE_ALL_RSA_IDENTITIES");
 
+        if (is_remote_call && !accept_agent_request(type, NULL, NULL)) {
+            fail("user declined");
+            goto responded;
+        }
         remove_all_keys(1);
         keylist_update();
 
@@ -1831,6 +1870,10 @@ static PageantAsyncOp *pageant_make_op(
         pageant_client_log(pc, reqid,
                            "request: SSH2_AGENTC_REMOVE_ALL_IDENTITIES");
 
+        if (is_remote_call && !accept_agent_request(type, NULL, NULL)) {
+            fail("user declined");
+            goto responded;
+        }
         remove_all_keys(2);
         keylist_update();
 
@@ -1990,6 +2033,10 @@ static PageantAsyncOp *pageant_make_op(
                 fail("key not found");
                 goto responded;
             }
+            if (is_remote_call && !accept_agent_request_pk_pub(type, pub)) {
+                fail("user declined");
+                goto responded;
+            }
 
             pageant_client_log(pc, reqid,
                                "found with comment: %s", pub->comment);
@@ -2107,7 +2154,7 @@ static PageantAsyncOp *pageant_make_op(
 void pageant_handle_msg(PageantClient *pc, PageantClientRequestId *reqid,
                         ptrlen msgpl)
 {
-    PageantAsyncOp *pao = pageant_make_op(pc, reqid, msgpl);
+    PageantAsyncOp *pao = pageant_make_op(pc, reqid, msgpl, true);
     queue_toplevel_callback(pageant_async_op_callback, pao);
 }
 
@@ -2542,7 +2589,7 @@ static unsigned pageant_client_op_query(PageantClientOp *pco)
 
         assert(pco->buf->len > 4);
         PageantAsyncOp *pao = pageant_make_op(
-            &pic.pc, &reqid, make_ptrlen(pco->buf->s + 4, pco->buf->len - 4));
+            &pic.pc, &reqid, make_ptrlen(pco->buf->s + 4, pco->buf->len - 4), false);
         while (!pic.got_response)
             pageant_async_op_coroutine(pao);
 

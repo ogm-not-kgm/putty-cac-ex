@@ -45,4 +45,3 @@ wchar_t *dupwcscat_fn(const wchar_t *s1, ...)
 
     return p;
 }
-

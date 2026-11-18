@@ -23,7 +23,11 @@
 #include "psftp.h"
 #include "ssh.h"
 #include "ssh/sftp.h"
+#include "ssh/xferlimit.h"
 #include "storage.h"
+#ifdef _WINDOWS
+#include "windows/ini.h"
+#endif
 
 static bool list = false;
 static bool verbose = false;
@@ -2223,6 +2227,7 @@ static void usage(void)
     printf("  -hostkey keyid\n");
     printf("            manually specify a host key (may be repeated)\n");
     printf("  -batch    disable all interactive prompts\n");
+    printf("  -limit num  limit upload speed per file (kbit/s)\n");
     printf("  -no-sanitise-stderr  don't strip control chars from"
            " standard error\n");
     printf("  -proxycmd command\n");
@@ -2280,6 +2285,9 @@ int psftp_main(CmdlineArgList *arglist)
 
     /* Load Default Settings before doing anything else. */
     conf = conf_new();
+#ifdef _WINDOWS
+    process_ini_option(cmdline_error);
+#endif
     do_defaults(NULL, conf);
 
     size_t arglistpos = 0;
@@ -2325,6 +2333,12 @@ int psftp_main(CmdlineArgList *arglist)
             try_scp = false; try_sftp = true;
         } else if (strcmp(argstr, "-scp") == 0) {
             try_scp = true; try_sftp = false;
+        } else if (strcmp(argstr, "-limit") == 0) {
+            const char *param_str = nextarg ? cmdline_arg_to_str(nextarg) : NULL;
+            char *error_msg = xfer_limit_set_arg(param_str);
+            if (error_msg)
+                cmdline_error("%s", error_msg);
+            arglistpos++;
         } else if (strcmp(argstr, "-sanitise-stderr") == 0) {
             sanitise_stderr = true;
         } else if (strcmp(argstr, "-no-sanitise-stderr") == 0) {

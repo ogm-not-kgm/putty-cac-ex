@@ -600,8 +600,8 @@ CONF_OPTION(no_remote_clearscroll, /* disable ESC[3J */
     SAVE_KEYWORD("NoRemoteClearScroll"),
 )
 CONF_OPTION(no_dbackspace, /* disable destructive backspace */
-    VALUE_TYPE(BOOL),
-    DEFAULT_BOOL(false),
+    VALUE_TYPE(INT),
+    DEFAULT_INT(0),
     SAVE_KEYWORD("NoDBackspace"),
 )
 CONF_OPTION(no_remote_charset, /* disable remote charset config */
@@ -810,6 +810,12 @@ CONF_OPTION(resize_action,
     VALUE_TYPE(INT),
     DEFAULT_INT(RESIZE_TERM),
     SAVE_KEYWORD("LockSize"),
+    STORAGE_ENUM(resize_effect),
+)
+CONF_OPTION(query_end,
+    VALUE_TYPE(INT),
+    DEFAULT_INT(QUERY_END_INACTIVE),
+    SAVE_KEYWORD("QueryEnd"),
     STORAGE_ENUM(resize_effect),
 )
 CONF_OPTION(bce,
@@ -1300,4 +1306,110 @@ CONF_OPTION(winclass,
     VALUE_TYPE(STR),
     DEFAULT_STR(""),
     SAVE_KEYWORD("WindowClass"),
+)
+
+/* end of original list */ \
+
+CONF_OPTION(alt_metabit,
+    VALUE_TYPE(BOOL),
+    DEFAULT_BOOL(false),
+    SAVE_KEYWORD("AltMetaBit"),
+)
+CONF_OPTION(ctrl_tab_switch,
+    VALUE_TYPE(BOOL),
+    DEFAULT_BOOL(false),
+    SAVE_KEYWORD("CtrlTabSwitch"),
+)
+CONF_OPTION(switch_skip_min,
+    VALUE_TYPE(BOOL),
+    DEFAULT_BOOL(false),
+    SAVE_KEYWORD("SwitchSkipMin"),
+)
+CONF_OPTION(rightaltkey,
+    VALUE_TYPE(BOOL),
+    DEFAULT_BOOL(false),
+    SAVE_KEYWORD("RightAltKey"),
+)
+CONF_OPTION(use_5casis,
+    VALUE_TYPE(BOOL),
+    DEFAULT_BOOL(false),
+    SAVE_KEYWORD("Use5Casis"),
+)
+CONF_OPTION(x,
+    VALUE_TYPE(INT),
+    DEFAULT_INT(CW_USEDEFAULT),
+    SAVE_KEYWORD("TermX"),
+)
+CONF_OPTION(y,
+    VALUE_TYPE(INT),
+    DEFAULT_INT(CW_USEDEFAULT),
+    SAVE_KEYWORD("TermY"),
+)
+CONF_OPTION(transparent_mode,
+    VALUE_TYPE(INT),
+    DEFAULT_INT(0),
+    SAVE_KEYWORD("TransparentMode"),
+)
+CONF_OPTION(shading,
+    VALUE_TYPE(INT),
+    DEFAULT_INT(0),
+    SAVE_KEYWORD("Shading"),
+)
+CONF_OPTION(use_alphablend,
+    VALUE_TYPE(BOOL),
+    DEFAULT_BOOL(false),
+    SAVE_KEYWORD("UseAlphaBlend"),
+)
+CONF_OPTION(wallpaper_place,
+    VALUE_TYPE(INT),
+    DEFAULT_INT(WALLPAPER_PLACE_DEFAULT),
+    SAVE_KEYWORD("WallpaperPlacement"),
+)
+CONF_OPTION(wallpaper_align,
+    VALUE_TYPE(INT),
+    DEFAULT_INT(WALLPAPER_ALIGN_DEFAULT),
+    SAVE_KEYWORD("WallpaperAlignment"),
+)
+CONF_OPTION(stop_when_moving,
+    VALUE_TYPE(BOOL),
+    DEFAULT_BOOL(false),
+    SAVE_KEYWORD("StoppedToDraw"),
+)
+CONF_OPTION(use_ddb,
+    VALUE_TYPE(BOOL),
+    DEFAULT_BOOL(false),
+    SAVE_KEYWORD("WallpaperUseSysRes"),
+)
+CONF_OPTION(bgimg_file,
+    VALUE_TYPE(FILENAME),
+    SAVE_KEYWORD("BackgroundImageFile"),
+)
+CONF_OPTION(iconfile,
+    VALUE_TYPE(FILENAME),
+    SAVE_KEYWORD("IconFile"),
+)
+CONF_OPTION(win_opacity,
+    VALUE_TYPE(INT),
+    DEFAULT_INT(100),
+    SAVE_KEYWORD("WindowOpacity"),
+)
+CONF_OPTION(win_opacity_inactive_prod,
+    VALUE_TYPE(INT),
+    DEFAULT_INT(100),
+    SAVE_KEYWORD("WindowOpacityInactiveProduct"),
+)
+CONF_OPTION(win_opacity_inactive_delay,
+    VALUE_TYPE(INT),
+    DEFAULT_INT(60000),
+    SAVE_KEYWORD("WindowOpacityInactiveDelayMs"),
+)
+CONF_OPTION(ssh_connection_sharing_ask,
+    VALUE_TYPE(BOOL),
+    DEFAULT_BOOL(false),
+    SAVE_KEYWORD("ConnectionSharingAsk"),
+)
+CONF_OPTION(use_tsf,
+    VALUE_TYPE(BOOL),
+    DEFAULT_BOOL(true),
+    SAVE_KEYWORD("UseTSF"),
 )

@@ -118,14 +118,15 @@ static void ca_refresh_pubkey_info(struct ca_state *st, dlgparam *dp)
         BinarySource_BARE_INIT_PL(src, data);
         const char *error;
         if (!ppk_loadpub_s(src, NULL, BinarySink_UPCAST(blob), NULL, &error)) {
-            text = dupprintf("Cannot decode key: %s", error);
+            char msg_str_buf[256];
+            text = dupprintf("Cannot decode key: %s", l10n_translate(error, msg_str_buf));
             goto out;
         }
     }
 
     ptrlen alg_name = pubkey_blob_to_alg_name(ptrlen_from_strbuf(blob));
     if (!alg_name.len) {
-        text = dupstr("Invalid key (no key type)");
+        text = l10n_dupstr("Invalid key (no key type)");
         goto out;
     }
 
@@ -344,12 +345,13 @@ static void ca_pubkey_file_handler(dlgcontrol *ctrl, dlgparam *dp,
         Filename *filename = dlg_filesel_get(ctrl, dp);
         strbuf *keyblob = strbuf_new();
         const char *load_error;
+        char msg_str_buf[256];
         bool ok = ppk_loadpub_f(filename, NULL, BinarySink_UPCAST(keyblob),
                                 NULL, &load_error);
         if (!ok) {
             char *message = dupprintf(
                 "Unable to load public key from '%s': %s",
-                filename_to_str(filename), load_error);
+                filename_to_str(filename), l10n_translate(load_error, msg_str_buf));
             dlg_error_msg(dp, message);
             sfree(message);
         } else {

@@ -1021,45 +1021,53 @@ SeatPromptResult verify_ssh_host_key(
      * we can't present interactive prompts. */
     seat_dialog_text_append(
         text, SDT_BATCH_ABORT, "Connection abandoned.");
+    char pds_trans_buf[128], pds_trans_buf2[128], *pds_str, *pds_str2;
 
     if (storage_status == 1) {
+        pds_str = l10n_translate(pds->hk_accept_action, pds_trans_buf);
         seat_dialog_text_append(
             text, SDT_PARA, "If you trust this host, %s to add the key to "
             "%s's cache and carry on connecting.",
-            pds->hk_accept_action, appname);
+            pds_str, appname);
         if (key && ssh_key_alg(key)->is_certificate) {
             seat_dialog_text_append(
                 text, SDT_PARA, "(Storing this certified key in the cache "
                 "will NOT cause its certification authority to be trusted "
                 "for any other key or host.)");
         }
+        pds_str = l10n_translate(pds->hk_connect_once_action, pds_trans_buf);
         seat_dialog_text_append(
             text, SDT_PARA, "If you want to carry on connecting just once, "
             "without adding the key to the cache, %s.",
-            pds->hk_connect_once_action);
+            pds_str);
+        pds_str = l10n_translate(pds->hk_cancel_action, pds_trans_buf);
         seat_dialog_text_append(
             text, SDT_PARA, "If you do not trust this host, %s to abandon the "
-            "connection.", pds->hk_cancel_action);
+            "connection.", pds_str);
         seat_dialog_text_append(
             text, SDT_PROMPT, "Store key in cache?");
     } else {
+        pds_str = l10n_translate(pds->hk_accept_action, pds_trans_buf);
         seat_dialog_text_append(
             text, SDT_PARA, "If you were expecting this change and trust the "
             "new key, %s to update %s's cache and carry on connecting.",
-            pds->hk_accept_action, appname);
+            pds_str, appname);
         if (key && ssh_key_alg(key)->is_certificate) {
             seat_dialog_text_append(
                 text, SDT_PARA, "(Storing this certified key in the cache "
                 "will NOT cause its certification authority to be trusted "
                 "for any other key or host.)");
         }
+        pds_str = l10n_translate(pds->hk_connect_once_action, pds_trans_buf);
         seat_dialog_text_append(
             text, SDT_PARA, "If you want to carry on connecting but without "
-            "updating the cache, %s.", pds->hk_connect_once_action);
+            "updating the cache, %s.", pds_str);
+        pds_str = l10n_translate(pds->hk_cancel_action, pds_trans_buf);
+        pds_str2 = l10n_translate(pds->hk_cancel_action_Participle, pds_trans_buf2);
         seat_dialog_text_append(
             text, SDT_PARA, "If you want to abandon the connection "
             "completely, %s to cancel. %s is the ONLY guaranteed safe choice.",
-            pds->hk_cancel_action, pds->hk_cancel_action_Participle);
+            pds_str, pds_str2);
         seat_dialog_text_append(
             text, SDT_PROMPT, "Update cached key?");
     }
@@ -1093,6 +1101,8 @@ SeatPromptResult confirm_weak_crypto_primitive(
     SeatDialogText *text = seat_dialog_text_new();
     const SeatDialogPromptDescriptions *pds =
         seat_prompt_descriptions(iseat.seat);
+    char algtype_buf[128];
+    algtype = l10n_translate(algtype, algtype_buf);
 
     seat_dialog_text_append(text, SDT_TITLE, "%s Security Alert", appname);
 
@@ -1136,10 +1146,13 @@ SeatPromptResult confirm_weak_crypto_primitive(
      * abort message, and stop. */
     seat_dialog_text_append(text, SDT_BATCH_ABORT, "Connection abandoned.");
 
+    char pds_accept_buf[128], pds_cancel_buf[128];
+    const char *weak_accept_action = l10n_translate(pds->weak_accept_action, pds_accept_buf);
+    const char *weak_cancel_action = l10n_translate(pds->weak_cancel_action, pds_cancel_buf);
     seat_dialog_text_append(
         text, SDT_PARA, "To accept the risk and continue, %s. "
         "To abandon the connection, %s.",
-        pds->weak_accept_action, pds->weak_cancel_action);
+        weak_accept_action, weak_cancel_action);
 
     seat_dialog_text_append(text, SDT_PROMPT, "Continue with connection?");
 
@@ -1176,10 +1189,13 @@ SeatPromptResult confirm_weak_cached_hostkey(
      * abort message, and stop. */
     seat_dialog_text_append(text, SDT_BATCH_ABORT, "Connection abandoned.");
 
+    char pds_accept_buf[128], pds_cancel_buf[128];
+    const char *weak_accept_action = l10n_translate(pds->weak_accept_action, pds_accept_buf);
+    const char *weak_cancel_action = l10n_translate(pds->weak_cancel_action, pds_cancel_buf);
     seat_dialog_text_append(
         text, SDT_PARA, "To accept the risk and continue, %s. "
         "To abandon the connection, %s.",
-        pds->weak_accept_action, pds->weak_cancel_action);
+        weak_accept_action, weak_cancel_action);
 
     seat_dialog_text_append(text, SDT_PROMPT, "Continue with connection?");
 

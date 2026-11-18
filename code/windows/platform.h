@@ -476,6 +476,7 @@ struct prefslist {
  */
 struct dlgparam {
     HWND hwnd;                         /* the hwnd of the dialog box */
+    HWND term_hwnd;                    /* terminal hwnd */
     struct winctrls *controltrees[8];  /* can have several of these */
     int nctrltrees;
     char *wintitle;                    /* title of actual window */
@@ -594,6 +595,7 @@ struct winctrl {
      * store temporary data about the control.
      */
     void *data;
+    void (*data_freefn)(struct winctrl *c);
 };
 /*
  * And this structure holds a set of the above, in two separate
@@ -610,6 +612,7 @@ void winctrl_init(struct winctrls *);
 void winctrl_cleanup(struct winctrls *);
 void winctrl_add(struct winctrls *, struct winctrl *);
 void winctrl_remove(struct winctrls *, struct winctrl *);
+void winctrl_free(struct winctrl *c);
 struct winctrl *winctrl_findbyctrl(struct winctrls *, dlgcontrol *);
 struct winctrl *winctrl_findbyid(struct winctrls *, int);
 struct winctrl *winctrl_findbyindex(struct winctrls *, int);
@@ -655,8 +658,12 @@ const char *win_strerror(int error);
 bool should_have_security(void);
 void restrict_process_acl(void);
 bool restricted_acl(void);
+void disable_timer_ex_suppression(HMODULE user32_module);
 void escape_registry_key(const char *in, strbuf *out);
+void escape_ini_section(const char *in, strbuf *out);
+void escape_ini_value_n(const char *in, size_t n, strbuf *out);
 void unescape_registry_key(const char *in, strbuf *out);
+int app_conf_get_int(const char *name, int def, int min, int max);
 
 bool is_console_handle(HANDLE);
 
@@ -779,6 +786,59 @@ int remove_from_jumplist_registry(const char *item);
  * sequence of NUL-terminated strings in memory, terminated with an
  * empty one. */
 char *get_jumplist_registry_entries(void);
+
+DWORD safeGetModuleFileNameA(HMODULE module, LPSTR filename, DWORD size);
+DWORD safeGetModuleFileNameW(HMODULE module, LPWSTR filename, DWORD size);
+#define GetModuleFileNameA safeGetModuleFileNameA
+#define GetModuleFileNameW safeGetModuleFileNameW
+
+/*
+ * Exports from iso2022.c
+ */
+int xMultiByteToWideChar(UINT, DWORD, LPCSTR, int, LPWSTR, int);
+int xWideCharToMultiByte(UINT, DWORD, LPCWSTR, int, LPSTR, int,
+                         LPCSTR, LPBOOL);
+#define MultiByteToWideChar xMultiByteToWideChar
+#define WideCharToMultiByte xWideCharToMultiByte
+
+/*
+ * Exports from l10n.c
+ */
+int l10nMessageBoxA(HWND, LPCSTR, LPCSTR, UINT);
+HWND l10nCreateWindowExA(DWORD, LPCSTR, LPCSTR, DWORD, int, int, int, int, HWND, HMENU, HINSTANCE, LPVOID);
+HWND l10nCreateWindowExW(DWORD dwExStyle, LPCWSTR lpClassName, LPCWSTR lpWindowName, DWORD dwStyle, int x, int y, int nWidth, int nHeight, HWND hWndParent, HMENU hMenu, HINSTANCE hInstance, LPVOID lpParam);
+INT_PTR l10nDialogBoxParamA(HINSTANCE, LPCSTR, HWND, DLGPROC, LPARAM);
+HWND l10nCreateDialogParamA(HINSTANCE, LPCSTR, HWND, DLGPROC, LPARAM);
+#define MessageBoxA l10nMessageBoxA
+#define CreateWindowExA l10nCreateWindowExA
+#define CreateWindowExW l10nCreateWindowExW
+#define DialogBoxParamA l10nDialogBoxParamA
+#define CreateDialogParamA l10nCreateDialogParamA
+BOOL l10nGetOpenFileNameA(OPENFILENAMEA *ofn);
+BOOL l10nGetOpenFileNameW(OPENFILENAMEW *ofn);
+BOOL l10nGetSaveFileNameA(OPENFILENAMEA *ofn);
+BOOL l10nGetSaveFileNameW(OPENFILENAMEW *ofn);
+#define GetOpenFileNameA l10nGetOpenFileNameA
+#define GetOpenFileNameW l10nGetOpenFileNameW
+#define GetSaveFileNameA l10nGetSaveFileNameA
+#define GetSaveFileNameW l10nGetSaveFileNameW
+int l10n_sprintf(char*,const char*, ...);
+int l10n_vsnprintf(char*,int,const char*, va_list args);
+char *l10n_dupprintf(const char *format, ...);
+//char *l10n_dupvprintf(const char *format, va_list ap);
+#define sprintf l10n_sprintf
+#if defined _WINDOWS && !defined __WINE__ && _MSC_VER < 1900
+#define _vsnprintf l10n_vsnprintf
+typedef WCHAR *PZZWSTR;
+#else//_WINDOWS
+#define HAS_VSNPRINTF
+#define vsnprintf l10n_vsnprintf
+#endif//_WINDOWS
+#define dupprintf l10n_dupprintf
+//#define dupvprintf l10n_dupvprintf
+HFONT l10n_getfont (HFONT);
+void l10n_created_window(HWND);
+BOOL l10nAppendMenu(HMENU menu, UINT flags, UINT_PTR id, LPCSTR text);
 
 /*
  * Windows clipboard-UI wording.

@@ -134,7 +134,7 @@ struct controlset *ctrl_settitle(struct controlbox *b,
     int index = ctrl_find_set(b, path, true);
     s->pathname = dupstr(path);
     s->boxname = NULL;
-    s->boxtitle = dupstr(title);
+    s->boxtitle = l10n_dupstr(title);
     s->ncontrols = s->ctrlsize = 0;
     s->ncolumns = 0;                   /* this is a title! */
     s->ctrls = NULL;
@@ -162,8 +162,8 @@ struct controlset *ctrl_getset(struct controlbox *b, const char *path,
     }
     s = snew(struct controlset);
     s->pathname = dupstr(path);
-    s->boxname = dupstr(name);
-    s->boxtitle = boxtitle ? dupstr(boxtitle) : NULL;
+    s->boxname = l10n_dupstr(name);
+    s->boxtitle = boxtitle ? l10n_dupstr(boxtitle) : NULL;
     s->ncolumns = 1;
     s->ncontrols = s->ctrlsize = 0;
     s->ctrls = NULL;
@@ -252,7 +252,7 @@ dlgcontrol *ctrl_editbox(struct controlset *s, const char *label,
                          intorptr context, intorptr context2)
 {
     dlgcontrol *c = ctrl_new(s, CTRL_EDITBOX, helpctx, handler, context);
-    c->label = label ? dupstr(label) : NULL;
+    c->label = label ? l10n_dupstr(label) : NULL;
     c->editbox.shortcut = shortcut;
     c->editbox.percentwidth = percentage;
     c->editbox.password = false;
@@ -267,7 +267,7 @@ dlgcontrol *ctrl_combobox(struct controlset *s, const char *label,
                           intorptr context, intorptr context2)
 {
     dlgcontrol *c = ctrl_new(s, CTRL_EDITBOX, helpctx, handler, context);
-    c->label = label ? dupstr(label) : NULL;
+    c->label = label ? l10n_dupstr(label) : NULL;
     c->editbox.shortcut = shortcut;
     c->editbox.percentwidth = percentage;
     c->editbox.password = false;
@@ -289,7 +289,7 @@ dlgcontrol *ctrl_radiobuttons_fn(struct controlset *s, const char *label,
     va_list ap;
     int i;
     dlgcontrol *c = ctrl_new(s, CTRL_RADIO, helpctx, handler, context);
-    c->label = label ? dupstr(label) : NULL;
+    c->label = label ? l10n_dupstr(label) : NULL;
     c->radio.shortcut = shortcut;
     c->radio.ncolumns = ncolumns;
     /*
@@ -318,7 +318,7 @@ dlgcontrol *ctrl_radiobuttons_fn(struct controlset *s, const char *label,
      */
     va_start(ap, context);
     for (i = 0; i < c->radio.nbuttons; i++) {
-        c->radio.buttons[i] = dupstr(va_arg(ap, char *));
+        c->radio.buttons[i] = l10n_dupstr(va_arg(ap, char *));
         if (c->radio.shortcut == NO_SHORTCUT)
             c->radio.shortcuts[i] = va_arg(ap, int);
                                        /* char promotes to int in arg lists */
@@ -333,7 +333,7 @@ dlgcontrol *ctrl_pushbutton(struct controlset *s, const char *label,
                             handler_fn handler, intorptr context)
 {
     dlgcontrol *c = ctrl_new(s, CTRL_BUTTON, helpctx, handler, context);
-    c->label = label ? dupstr(label) : NULL;
+    c->label = label ? l10n_dupstr(label) : NULL;
     c->button.shortcut = shortcut;
     c->button.isdefault = false;
     c->button.iscancel = false;
@@ -345,7 +345,7 @@ dlgcontrol *ctrl_listbox(struct controlset *s, const char *label,
                          handler_fn handler, intorptr context)
 {
     dlgcontrol *c = ctrl_new(s, CTRL_LISTBOX, helpctx, handler, context);
-    c->label = label ? dupstr(label) : NULL;
+    c->label = label ? l10n_dupstr(label) : NULL;
     c->listbox.shortcut = shortcut;
     c->listbox.height = 5;             /* *shrug* a plausible default */
     c->listbox.draglist = false;
@@ -362,7 +362,7 @@ dlgcontrol *ctrl_droplist(struct controlset *s, const char *label,
                           handler_fn handler, intorptr context)
 {
     dlgcontrol *c = ctrl_new(s, CTRL_LISTBOX, helpctx, handler, context);
-    c->label = label ? dupstr(label) : NULL;
+    c->label = label ? l10n_dupstr(label) : NULL;
     c->listbox.shortcut = shortcut;
     c->listbox.height = 0;             /* means it's a drop-down list */
     c->listbox.draglist = false;
@@ -379,7 +379,7 @@ dlgcontrol *ctrl_draglist(struct controlset *s, const char *label,
                           handler_fn handler, intorptr context)
 {
     dlgcontrol *c = ctrl_new(s, CTRL_LISTBOX, helpctx, handler, context);
-    c->label = label ? dupstr(label) : NULL;
+    c->label = label ? l10n_dupstr(label) : NULL;
     c->listbox.shortcut = shortcut;
     c->listbox.height = 5;             /* *shrug* a plausible default */
     c->listbox.draglist = true;
@@ -397,11 +397,11 @@ dlgcontrol *ctrl_filesel(struct controlset *s, const char *label,
                          handler_fn handler, intorptr context)
 {
     dlgcontrol *c = ctrl_new(s, CTRL_FILESELECT, helpctx, handler, context);
-    c->label = label ? dupstr(label) : NULL;
+    c->label = label ? l10n_dupstr(label) : NULL;
     c->fileselect.shortcut = shortcut;
     c->fileselect.filter = filter;
     c->fileselect.for_writing = write;
-    c->fileselect.title = dupstr(title);
+    c->fileselect.title = l10n_dupstr(title);
     c->fileselect.just_button = false;
     return c;
 }
@@ -411,7 +411,7 @@ dlgcontrol *ctrl_fontsel(struct controlset *s, const char *label,
                          handler_fn handler, intorptr context)
 {
     dlgcontrol *c = ctrl_new(s, CTRL_FONTSELECT, helpctx, handler, context);
-    c->label = label ? dupstr(label) : NULL;
+    c->label = label ? l10n_dupstr(label) : NULL;
     c->fontselect.shortcut = shortcut;
     return c;
 }
@@ -427,7 +427,7 @@ dlgcontrol *ctrl_text(struct controlset *s, const char *text,
                       HelpCtx helpctx)
 {
     dlgcontrol *c = ctrl_new(s, CTRL_TEXT, helpctx, NULL, P(NULL));
-    c->label = dupstr(text);
+    c->label = l10n_dupstr(text);
     c->text.wrap = true;
     return c;
 }
@@ -437,7 +437,7 @@ dlgcontrol *ctrl_checkbox(struct controlset *s, const char *label,
                           handler_fn handler, intorptr context)
 {
     dlgcontrol *c = ctrl_new(s, CTRL_CHECKBOX, helpctx, handler, context);
-    c->label = label ? dupstr(label) : NULL;
+    c->label = label ? l10n_dupstr(label) : NULL;
     c->checkbox.shortcut = shortcut;
     return c;
 }

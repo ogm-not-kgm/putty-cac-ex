@@ -9,6 +9,14 @@
 #include "putty.h"
 #include "dialog.h"
 #include "storage.h"
+#include "win-gui-seat.h"
+#include "winwallp.h"
+#include "wtrans.h"
+
+static void wallpaper_dropdown_handler(dlgcontrol *ctrl, void *dlg, void *data, int event);
+static void conf_win_opacity_handler(dlgcontrol *ctrl, dlgparam *dlg, void *data, int event);
+
+#include "config-sample-text.h"
 
 static void about_handler(dlgcontrol *ctrl, dlgparam *dlg,
                           void *data, int event)
@@ -111,6 +119,12 @@ void win_setup_config_box(struct controlbox *b, HWND *hwndp, bool has_help,
     ctrl_checkbox(s, "Control-Alt is different from AltGr", 'd',
                   HELPCTX(keyboard_ctrlalt),
                   conf_checkbox_handler, I(CONF_ctrlaltkeys));
+    ctrl_checkbox(s, "Right-Alt acts as it is", 'l',
+                  HELPCTX(keyboard_rightalt),
+                  conf_checkbox_handler, I(CONF_rightaltkey));
+    ctrl_checkbox(s, "Set meta bit on Alt (instead of escape-char)", 'm',
+                  HELPCTX(keyboard_altmeta),
+                  conf_checkbox_handler, I(CONF_alt_metabit));
 
     /*
      * Windows allows an arbitrary .WAV to be played as a bell, and
@@ -141,9 +155,9 @@ void win_setup_config_box(struct controlbox *b, HWND *hwndp, bool has_help,
                 c->radio.buttons =
                     sresize(c->radio.buttons, c->radio.nbuttons, char *);
                 c->radio.buttons[c->radio.nbuttons-1] =
-                    dupstr("Play a custom sound file");
+                    l10n_dupstr("Play a custom sound file");
                 c->radio.buttons[c->radio.nbuttons-2] =
-                    dupstr("Beep using the PC speaker");
+                    l10n_dupstr("Beep using the PC speaker");
                 c->radio.buttondata =
                     sresize(c->radio.buttondata, c->radio.nbuttons, intorptr);
                 c->radio.buttondata[c->radio.nbuttons-1] = I(BELL_WAVEFILE);
@@ -210,6 +224,11 @@ void win_setup_config_box(struct controlbox *b, HWND *hwndp, bool has_help,
                   HELPCTX(translation_cyrillic),
                   conf_checkbox_handler,
                   I(CONF_xlat_capslockcyr));
+    if (!midsession)
+        ctrl_checkbox(s, "Use character code 5c as is", 't',
+                  HELPCTX(translation_use5casis),
+                  conf_checkbox_handler,
+                  I(CONF_use_5casis));
 
     /*
      * On Windows we can use but not enumerate translation tables
@@ -240,11 +259,11 @@ void win_setup_config_box(struct controlbox *b, HWND *hwndp, bool has_help,
                 c->radio.buttons =
                     sresize(c->radio.buttons, c->radio.nbuttons, char *);
                 c->radio.buttons[c->radio.nbuttons-3] =
-                    dupstr("Font has XWindows encoding");
+                    l10n_dupstr("Font has XWindows encoding");
                 c->radio.buttons[c->radio.nbuttons-2] =
-                    dupstr("Use font in both ANSI and OEM modes");
+                    l10n_dupstr("Use font in both ANSI and OEM modes");
                 c->radio.buttons[c->radio.nbuttons-1] =
-                    dupstr("Use font in OEM mode only");
+                    l10n_dupstr("Use font in OEM mode only");
                 c->radio.buttondata =
                     sresize(c->radio.buttondata, c->radio.nbuttons, intorptr);
                 c->radio.buttondata[c->radio.nbuttons-3] = I(VT_XWINDOWS);
@@ -311,6 +330,7 @@ void win_setup_config_box(struct controlbox *b, HWND *hwndp, bool has_help,
                   HELPCTX(colours_system),
                   conf_checkbox_handler, I(CONF_system_colour));
 
+    sample_text_setup(b, hwndp, has_help, midsession, protocol);
 
     /*
      * Resize-by-changing-font is a Windows insanity.
@@ -340,6 +360,13 @@ void win_setup_config_box(struct controlbox *b, HWND *hwndp, bool has_help,
     ctrl_checkbox(s, "Window closes on ALT-F4", '4',
                   HELPCTX(behaviour_altf4),
                   conf_checkbox_handler, I(CONF_alt_f4));
+    ctrl_radiobuttons(s, "When Windows session ends:", 'd', 1,
+                      HELPCTX(behaviour_queryend),
+                      conf_radiobutton_handler,
+                      I(CONF_query_end),
+                      "Always close (even if session is active)", I(QUERY_END_YES),
+                      "Close only if session is inactive", I(QUERY_END_INACTIVE),
+                      "Always block (if terminal window exists)", I(QUERY_END_NO));
     ctrl_checkbox(s, "System menu appears on ALT-Space", 'y',
                   HELPCTX(behaviour_altspace),
                   conf_checkbox_handler, I(CONF_alt_space));
@@ -353,6 +380,87 @@ void win_setup_config_box(struct controlbox *b, HWND *hwndp, bool has_help,
                   HELPCTX(behaviour_altenter),
                   conf_checkbox_handler,
                   I(CONF_fullscreenonaltenter));
+    if (!midsession) {
+        ctrl_checkbox(s, "Switch PuTTY windows with Ctrl-Tab", 's',
+                  HELPCTX(behaviour_switchwin),
+                  conf_checkbox_handler, I(CONF_ctrl_tab_switch));
+        ctrl_checkbox(s, "Skip minimized windows", 'm',
+                  HELPCTX(behaviour_switchskipmin),
+                  conf_checkbox_handler, I(CONF_switch_skip_min));
+    }
+    ctrl_checkbox(s, "Use TSF (Text Services Framework) for IME", 'u',
+                  HELPCTX(no_help),
+                  conf_checkbox_handler, I(CONF_use_tsf));
+
+    /*
+     * The Window/Wallpaper panel.
+     */
+    ctrl_settitle(b, "Window/Wallpaper", "Options controlling wallpaper");
+
+        s = ctrl_getset( b, "Window/Wallpaper", "wallpaper",
+                                         "Transparent background mode" );
+    ctrl_radiobuttons( s, NULL, NO_SHORTCUT, 1,
+                                           HELPCTX(wallpaper_backmode),
+                                           conf_radiobutton_handler,
+                                           I(CONF_transparent_mode),
+                                           "Disabled", 'd', I(0),
+                                           "xterm-like transparency", 'x', I(WALLPAPER_MODE_DESKTOP),
+                                           "Use bitmap file", 'b', I(WALLPAPER_MODE_IMAGE),
+                                           "Image on desktop", 't', I(WALLPAPER_MODE_DTIMG),
+                                           NULL );
+
+        s = ctrl_getset( b, "Window/Wallpaper", "shading",
+                                         "Adjust transparency" );
+        ctrl_editbox( s, "Alpha value of bg image (0-255):", 'l', 20,
+                                  HELPCTX(wallpaper_backtrans),
+                                  conf_editbox_handler, I(CONF_shading), ED_INT);
+
+        s = ctrl_getset( b, "Window/Wallpaper", "imgfile",
+                                         "Settings for bitmap file" );
+        ctrl_droplist(s, "Placement:", 'p', 40, HELPCTX(wallpaper_backimage),
+                      wallpaper_dropdown_handler, I(CONF_wallpaper_place));
+        ctrl_droplist(s, "Alignment:", 'n', 40, HELPCTX(wallpaper_backimage),
+                      wallpaper_dropdown_handler, I(CONF_wallpaper_align));
+        ctrl_columns(s, 2, 60, 40);
+        c = ctrl_checkbox( s, "Use alpha-blending", 'u',
+                                   HELPCTX(wallpaper_backimage),
+                                   conf_checkbox_handler, I(CONF_use_alphablend) );
+        c->column = 0;
+        c = ctrl_checkbox(s, "Use System Res", 'r', HELPCTX(wallpaper_backimage), conf_checkbox_handler, I(CONF_use_ddb));
+        c->column = 1;
+        ctrl_columns(s, 1, 100);
+        ctrl_checkbox( s, "Suspend updating when moving window", 's',
+                                   HELPCTX(wallpaper_backimage),
+                                   conf_checkbox_handler, I(CONF_stop_when_moving) );
+    {
+        /* GDI+ is available by default on Windows XP+ */
+        int has_gdip = (osMajorVersion > 5 || (osMajorVersion == 5 && osMinorVersion >= 1));
+        ctrl_filesel( s, "Bitmap file to use for background:", NO_SHORTCUT,
+                                  has_gdip ? FILTER_IMAGE_EX_FILES : FILTER_IMAGE_FILES,
+                                  FALSE, has_gdip ? "Select image file for background" : "Select bitmap file for background",
+                                  HELPCTX(wallpaper_backimage),
+                                  conf_filesel_handler, I(CONF_bgimg_file) );
+    }
+
+    /*
+     * Icon for window title bar, window transparency; "window" appearance panel
+     */
+    ctrl_settitle(b, "Window/Icon and Transparency", "Options for extra window appearance");
+    if (!midsession) {
+        s = ctrl_getset(b, "Window/Icon and Transparency", "icon", NULL);
+        ctrl_filesel(s, "Icon on title bar", 'i',
+                 FILTER_ICON_FILES, FALSE, "Select icon file",
+                 HELPCTX(icon_titlebar),
+                 conf_filesel_handler, I(CONF_iconfile));
+    }
+    s = ctrl_getset(b, "Window/Icon and Transparency", "opacity", "Opacity of window");
+    ctrl_editbox(s, "Opacity ratio of window (30-100%):", 'p', 20,
+        HELPCTX(win_opacity), conf_win_opacity_handler, I(CONF_win_opacity), ED_INT);
+    ctrl_editbox(s, "Cumulative opacity ratio if unfocused (10-100%):", 'u', 20,
+        HELPCTX(win_opacity_inactive_prod), conf_editbox_handler, I(CONF_win_opacity_inactive_prod), ED_INT);
+    static const struct conf_editbox_handler_type int_deci = {.type = EDIT_FIXEDPOINT, .denominator = 1000};
+    ctrl_editbox(s, "Delay when unfocused (sec):", 'd', 20,
+        HELPCTX(win_opacity_inactive_delay), conf_editbox_handler, I(CONF_win_opacity_inactive_delay), CP(&int_deci));
 
     /*
      * Windows supports a local-command proxy.
@@ -380,5 +488,83 @@ void win_setup_config_box(struct controlbox *b, HWND *hwndp, bool has_help,
                      FILTER_ALL_FILES, false, "Select X authority file",
                      HELPCTX(ssh_tunnels_xauthority),
                      conf_filesel_handler, I(CONF_xauthfile));
+    }
+}
+
+typedef struct {
+    const char *name;
+    int val;
+} DropdownItem;
+
+static void wallpaper_dropdown_handler(dlgcontrol *ctrl, void *dlg, void *data, int event)
+{
+    static const DropdownItem align_items[] = {
+        {"Center", WALLPAPER_ALIGN_CENTER | WALLPAPER_ALIGN_MIDDLE},
+        {"Top left", 0},
+        {"Top", WALLPAPER_ALIGN_CENTER},
+        {"Top right", WALLPAPER_ALIGN_RIGHT},
+        {"Left", WALLPAPER_ALIGN_MIDDLE},
+        {"Right", WALLPAPER_ALIGN_RIGHT | WALLPAPER_ALIGN_MIDDLE},
+        {"Bottom left", WALLPAPER_ALIGN_BOTTOM},
+        {"Bottom", WALLPAPER_ALIGN_CENTER | WALLPAPER_ALIGN_BOTTOM},
+        {"Bottom right", WALLPAPER_ALIGN_RIGHT | WALLPAPER_ALIGN_BOTTOM},
+        {NULL, 0},
+    }, place_items[] = {
+        {"Original size", WALLPAPER_PLACE_ORIGINAL},
+        {"Tile", WALLPAPER_PLACE_TILE_X | WALLPAPER_PLACE_TILE_Y},
+        {"Tile horizontally", WALLPAPER_PLACE_TILE_X},
+        {"Tile vertically", WALLPAPER_PLACE_TILE_Y},
+        {"Zoom", WALLPAPER_PLACE_SHRINK | WALLPAPER_PLACE_EXPAND},
+        {"Shrink only", WALLPAPER_PLACE_SHRINK},
+        {"Fit", WALLPAPER_PLACE_SHRINK | WALLPAPER_PLACE_EXPAND | WALLPAPER_PLACE_FIT},
+        {NULL, 0},
+    };
+    const DropdownItem *items;
+    int conf_item = ctrl->context.i;
+    Conf *conf = (Conf *)data;
+    items = (conf_item == CONF_wallpaper_align) ? align_items : place_items;
+    if (event == EVENT_REFRESH) {
+        int i, count;
+        int old_val = conf_get_int(conf, conf_item);
+        /* ref says the following updates cause retriggering EVENT_REFRESH */
+        dlg_update_start(ctrl, dlg);
+        dlg_listbox_clear(ctrl, dlg);
+        for (i = 0; items[i].name; i++)
+            dlg_listbox_addwithid(ctrl, dlg, items[i].name, items[i].val);
+        count = i;
+        for (i = 0; i < count; i++) {
+            if (old_val == items[i].val) {
+                dlg_listbox_select(ctrl, dlg, i);
+                break;
+            }
+        }
+        if (i == count) { /* an unsupported setting was chosen */
+            dlg_listbox_select(ctrl, dlg, 0);
+            old_val = items[0].val;
+        }
+        dlg_update_done(ctrl, dlg);
+        conf_set_int(conf, conf_item, old_val); /* restore */
+    } else if (event == EVENT_SELCHANGE) {
+        int id, index = dlg_listbox_index(ctrl, dlg);
+        if (index < 0)
+            id = items[0].val;
+        else
+            id = dlg_listbox_getid(ctrl, dlg, index);
+        conf_set_int(conf, conf_item, id);
+    }
+}
+
+static void conf_win_opacity_handler(dlgcontrol *ctrl, dlgparam *dlg, void *data, int event)
+{
+    conf_editbox_handler(ctrl, dlg, data, event);
+    int key = ctrl->context.i;
+    if (event == EVENT_VALCHANGE) {
+        const HWND hwnd = dlg->term_hwnd;
+        if (hwnd) {
+            WinGuiSeat *wgs = (WinGuiSeat *)GetWindowLongPtr(hwnd, GWLP_USERDATA);
+            Conf *conf = (Conf *)data;
+            int opacity = conf_get_int(conf, key);
+            wtrans_preview(wgs, opacity);
+        }
     }
 }

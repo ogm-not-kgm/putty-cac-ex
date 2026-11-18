@@ -12,6 +12,7 @@
 #include "storage.h"
 #include "tree234.h"
 #include "security-api.h"
+#include "ini.h"
 
 void cmdline_error(const char *fmt, ...)
 {
@@ -311,6 +312,7 @@ int main(int argc, char **argv)
      * Process the command line.
      */
     conf = conf_new();
+    process_ini_option(cmdline_error);
     do_defaults(NULL, conf);
     settings_set_default_protocol(conf_get_int(conf, CONF_protocol));
     settings_set_default_port(conf_get_int(conf, CONF_port));

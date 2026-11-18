@@ -12,6 +12,7 @@
 #include "sshkeygen.h"
 #include "licence.h"
 #include "security-api.h"
+#include "winl10n.h"
 #include "puttygen-rc.h"
 
 #include <commctrl.h>
@@ -25,6 +26,13 @@
 #define DEFAULT_KEY_BITS 2048
 #define DEFAULT_ECCURVE_INDEX 0
 #define DEFAULT_EDCURVE_INDEX 0
+
+#undef AppendMenu
+#define AppendMenu(m, f, i, t) l10nAppendMenu(m, f, i, t)
+
+#define APPNAME "PuTTYgen"
+
+const char *const appname = APPNAME;
 
 static Filename *cmdline_keyfile = NULL;
 static ptrlen cmdline_demo_keystr;
@@ -417,6 +425,11 @@ static INT_PTR CALLBACK PPKParamsProc(HWND hwnd, UINT msg,
             try_get_dlg_item_uint32(hwnd, IDC_ARGON2_TIME,
                                     pp->params.argon2_passes_auto ?
                                     &pp->time_ms : &pp->time_passes);
+            if (pp->params.argon2_passes_auto) {
+                pp->params.argon2_milliseconds = pp->time_ms;
+            } else {
+                pp->params.argon2_passes = pp->time_passes;
+            }
             return 0;
           case IDC_ARGON2_PARALLEL:
             try_get_dlg_item_uint32(hwnd, IDC_ARGON2_PARALLEL,
@@ -530,7 +543,7 @@ static INT_PTR CALLBACK AboutProc(HWND hwnd, UINT msg,
                 ver, buildinfo_text,
                 "\251 " SHORT_COPYRIGHT_DETAILS ". All rights reserved.");
             sfree(buildinfo_text);
-            SetDlgItemText(hwnd, 1000, text);
+            SetDlgItemTextCp1252(hwnd, 1000, text);
             MakeDlgItemBorderless(hwnd, 1000);
             sfree(text);
         }
@@ -550,7 +563,7 @@ static INT_PTR CALLBACK AboutProc(HWND hwnd, UINT msg,
           case 102:
             /* Load web browser */
             ShellExecute(hwnd, "open",
-                         "https://www.chiark.greenend.org.uk/~sgtatham/putty/",
+                         "https://www.ranvis.com/putty",
                          0, 0, SW_SHOWDEFAULT);
             return 0;
         }
@@ -625,6 +638,7 @@ struct InitialParams {
 struct MainDlgState {
     bool generation_thread_exists;
     bool key_exists;
+    bool key_dirty;
     int entropy_got, entropy_required;
     strbuf *entropy;
     ULONG entropy_prev_msgtime;
@@ -713,7 +727,7 @@ static void setupbigedit1(HWND hwnd, RSAKey *key)
     ShowWindow(GetDlgItem(hwnd, IDC_PKSTATIC), SW_SHOW);
     ShowWindow(GetDlgItem(hwnd, IDC_KEYDISPLAY), SW_SHOW);
 
-    SetDlgItemText(hwnd, IDC_PKSTATIC,
+    l10nSetDlgItemText(hwnd, IDC_PKSTATIC,
                    "&Public key for pasting into authorized_keys file:");
 
     char *buffer = ssh1_pubkey_str(key);
@@ -729,7 +743,7 @@ static void setupbigedit2(HWND hwnd, ssh2_userkey *key)
         ShowWindow(GetDlgItem(hwnd, IDC_PKSTATIC), SW_HIDE);
         ShowWindow(GetDlgItem(hwnd, IDC_KEYDISPLAY), SW_HIDE);
 
-        SetDlgItemText(hwnd, IDC_CERTSTATIC,
+        l10nSetDlgItemText(hwnd, IDC_CERTSTATIC,
                        "This public key contains an OpenSSH certificate.");
     } else {
         ShowWindow(GetDlgItem(hwnd, IDC_CERTSTATIC), SW_HIDE);
@@ -737,7 +751,7 @@ static void setupbigedit2(HWND hwnd, ssh2_userkey *key)
         ShowWindow(GetDlgItem(hwnd, IDC_PKSTATIC), SW_SHOW);
         ShowWindow(GetDlgItem(hwnd, IDC_KEYDISPLAY), SW_SHOW);
 
-        SetDlgItemText(hwnd, IDC_PKSTATIC, "&Public key for pasting into "
+        l10nSetDlgItemText(hwnd, IDC_PKSTATIC, "&Public key for pasting into "
                        "OpenSSH authorized_keys file:");
 
         char *buffer = ssh2_pubkey_openssh_str(key);
@@ -776,7 +790,7 @@ static const int gotkey_ids_unconditional[] = {
 };
 static const int gotkey_ids_conditional[] = {
     IDC_PKSTATIC, IDC_KEYDISPLAY,
-    IDC_CERTSTATIC, IDC_CERTMOREINFO,
+    IDC_CERTSTATIC, IDC_CERTMOREINFO, 0
 };
 
 /*
@@ -1151,7 +1165,7 @@ void load_key_file(HWND hwnd, struct MainDlgState *state,
             pps.comment = comment;
             dlgret = DialogBoxParam(hinst,
                                     MAKEINTRESOURCE(210),
-                                    NULL, PassphraseProc,
+                                    hwnd, PassphraseProc,
                                     (LPARAM) &pps);
             if (!dlgret) {
                 ret = -2;
@@ -1182,11 +1196,14 @@ void load_key_file(HWND hwnd, struct MainDlgState *state,
     if (comment)
         sfree(comment);
     if (ret == 0) {
+        errmsg = l10n_dupstr(errmsg);
         char *msg = dupprintf("Couldn't load private key (%s)", errmsg);
         message_box(hwnd, msg, "PuTTYgen Error", MB_OK | MB_ICONERROR,
                     false, HELPCTXID(errors_cantloadkey));
         sfree(msg);
+        sfree(errmsg);
     } else if (ret == 1) {
+        state->key_dirty = false;  // the flag cannot be cleared in update_ui_after_load()
         /*
          * Now update the key controls with all the
          * key data.
@@ -1207,7 +1224,7 @@ void load_key_file(HWND hwnd, struct MainDlgState *state,
                     "use the \"Save private key\" command to\n"
                     "save it in PuTTY's own format.",
                     key_type_to_str(realtype));
-            MessageBox(NULL, msg, "PuTTYgen Notice",
+            MessageBox(hwnd, msg, "PuTTYgen Notice",
                        MB_OK | MB_ICONINFORMATION);
         }
     }
@@ -1333,7 +1350,7 @@ static void start_generating_key(HWND hwnd, struct MainDlgState *state)
     struct rsa_key_thread_params *params;
     DWORD threadid;
 
-    SetDlgItemText(hwnd, IDC_GENERATING, generating_msg);
+    l10nSetDlgItemText(hwnd, IDC_GENERATING, generating_msg);
     SendDlgItemMessage(hwnd, IDC_PROGRESS, PBM_SETRANGE, 0,
                        MAKELPARAM(0, PROGRESSRANGE));
     SendDlgItemMessage(hwnd, IDC_PROGRESS, PBM_SETPOS, 0, 0);
@@ -1486,6 +1503,17 @@ static INT_PTR CertInfoProc(HWND hwnd, UINT msg, WPARAM wParam,
     return 0;
 }
 
+static bool confirm_key_discard(HWND hwnd, struct MainDlgState *state, bool on_quit)
+{
+    if (!state->key_dirty)
+        return true;
+    int result = MessageBox(hwnd,
+        on_quit ? "The key you have generated will be discarded.\nAre you sure you want to exit without saving?"
+        : "The key you have generated will be discarded.\nAre you sure you want to continue?",
+        "PuTTYgen Warning", MB_YESNO | MB_ICONWARNING | MB_DEFBUTTON2);
+    return result == IDYES;
+}
+
 /*
  * Dialog-box function for the main PuTTYgen dialog box.
  */
@@ -1516,6 +1544,7 @@ static INT_PTR CALLBACK MainDlgProc(HWND hwnd, UINT msg,
         state->generation_thread_exists = false;
         state->entropy = NULL;
         state->key_exists = false;
+        state->key_dirty = false;
         SetWindowLongPtr(hwnd, GWLP_USERDATA, (LONG_PTR) state);
         {
             HMENU menu, menu1;
@@ -1609,39 +1638,6 @@ static INT_PTR CALLBACK MainDlgProc(HWND hwnd, UINT msg,
             /* Accelerators used: acglops1rbvde */
 
             ctlposinit(&cp, hwnd, 4, 4, 4);
-            beginbox(&cp, "Key", IDC_BOX_KEY);
-            cp2 = cp;
-            statictext(&cp2, "No key.", 1, IDC_NOKEY);
-            cp2 = cp;
-            statictext(&cp2, "", 1, IDC_GENERATING);
-            progressbar(&cp2, IDC_PROGRESS);
-            cp2 = cp;
-            bigeditctrl(&cp2, NULL, -1, IDC_CERTSTATIC, 3);
-            {
-                HWND child = GetDlgItem(hwnd, IDC_CERTSTATIC);
-                LONG_PTR style = GetWindowLongPtr(child, GWL_STYLE);
-                style &= ~WS_VSCROLL;
-                SetWindowLongPtr(child, GWL_STYLE, style);
-                SendMessage(child, EM_SETREADONLY, true, 0);
-            }
-            MakeDlgItemBorderless(hwnd, IDC_CERTSTATIC);
-            cp2.xoff = cp2.width = cp2.width / 3;
-            button(&cp2, "Certificate info...", IDC_CERTMOREINFO, false);
-            bigeditctrl(&cp,
-                        "&Public key for pasting into authorized_keys file:",
-                        IDC_PKSTATIC, IDC_KEYDISPLAY, 5);
-            SendDlgItemMessage(hwnd, IDC_KEYDISPLAY, EM_SETREADONLY, 1, 0);
-            staticedit(&cp, "Key f&ingerprint:", IDC_FPSTATIC,
-                       IDC_FINGERPRINT, 82);
-            SendDlgItemMessage(hwnd, IDC_FINGERPRINT, EM_SETREADONLY, 1,
-                               0);
-            staticedit(&cp, "Key &comment:", IDC_COMMENTSTATIC,
-                       IDC_COMMENTEDIT, 82);
-            staticpassedit(&cp, "Key p&assphrase:", IDC_PASSPHRASE1STATIC,
-                           IDC_PASSPHRASE1EDIT, 82);
-            staticpassedit(&cp, "C&onfirm passphrase:",
-                           IDC_PASSPHRASE2STATIC, IDC_PASSPHRASE2EDIT, 82);
-            endbox(&cp);
             beginbox(&cp, "Actions", IDC_BOX_ACTIONS);
             staticbtn(&cp, "Generate a public/private key pair",
                       IDC_GENSTATIC, "&Generate", IDC_GENERATE);
@@ -1705,6 +1701,39 @@ static INT_PTR CALLBACK MainDlgProc(HWND hwnd, UINT msg,
                        1, IDC_NOTHINGSTATIC);
             ymax = ymax > cp2.ypos ? ymax : cp2.ypos;
             cp.ypos = ymax;
+            endbox(&cp);
+            beginbox(&cp, "Key", IDC_BOX_KEY);
+            cp2 = cp;
+            statictext(&cp2, "No key.", 1, IDC_NOKEY);
+            cp2 = cp;
+            statictext(&cp2, "", 1, IDC_GENERATING);
+            progressbar(&cp2, IDC_PROGRESS);
+            cp2 = cp;
+            bigeditctrl(&cp2, NULL, -1, IDC_CERTSTATIC, 3);
+            {
+                HWND child = GetDlgItem(hwnd, IDC_CERTSTATIC);
+                LONG_PTR style = GetWindowLongPtr(child, GWL_STYLE);
+                style &= ~WS_VSCROLL;
+                SetWindowLongPtr(child, GWL_STYLE, style);
+                SendMessage(child, EM_SETREADONLY, true, 0);
+            }
+            MakeDlgItemBorderless(hwnd, IDC_CERTSTATIC);
+            cp2.xoff = cp2.width = cp2.width / 3;
+            button(&cp2, "Certificate info...", IDC_CERTMOREINFO, false);
+            bigeditctrl(&cp,
+                        "&Public key for pasting into authorized_keys file:",
+                        IDC_PKSTATIC, IDC_KEYDISPLAY, 5);
+            SendDlgItemMessage(hwnd, IDC_KEYDISPLAY, EM_SETREADONLY, 1, 0);
+            staticedit(&cp, "Key f&ingerprint:", IDC_FPSTATIC,
+                       IDC_FINGERPRINT, 82);
+            SendDlgItemMessage(hwnd, IDC_FINGERPRINT, EM_SETREADONLY, 1,
+                               0);
+            staticedit(&cp, "Key &comment:", IDC_COMMENTSTATIC,
+                       IDC_COMMENTEDIT, 82);
+            staticpassedit(&cp, "Key p&assphrase:", IDC_PASSPHRASE1STATIC,
+                           IDC_PASSPHRASE1EDIT, 82);
+            staticpassedit(&cp, "C&onfirm passphrase:",
+                           IDC_PASSPHRASE2STATIC, IDC_PASSPHRASE2EDIT, 82);
             endbox(&cp);
         }
         struct InitialParams *params = (struct InitialParams *)lParam;
@@ -1827,11 +1856,6 @@ static INT_PTR CALLBACK MainDlgProc(HWND hwnd, UINT msg,
             int dlgret = DialogBoxParam(hinst, MAKEINTRESOURCE(215),
                                         NULL, PPKParamsProc, (LPARAM)pp);
             if (dlgret) {
-                if (pp->params.argon2_passes_auto) {
-                    pp->params.argon2_milliseconds = pp->time_ms;
-                } else {
-                    pp->params.argon2_passes = pp->time_passes;
-                }
                 save_params = pp->params;
             }
             break;
@@ -1876,6 +1900,8 @@ static INT_PTR CALLBACK MainDlgProc(HWND hwnd, UINT msg,
                 break;
             state =
                 (struct MainDlgState *) GetWindowLongPtr(hwnd, GWLP_USERDATA);
+            if (!confirm_key_discard(hwnd, state, false))
+                break;
             if (!state->generation_thread_exists) {
                 unsigned raw_entropy_required;
                 unsigned char *raw_entropy_buf;
@@ -1985,7 +2011,7 @@ static INT_PTR CALLBACK MainDlgProc(HWND hwnd, UINT msg,
                 state->entropy_required = raw_entropy_required;
 
                 ui_set_state(hwnd, state, 1);
-                SetDlgItemText(hwnd, IDC_GENERATING, entropy_msg);
+                l10nSetDlgItemText(hwnd, IDC_GENERATING, entropy_msg);
                 state->key_exists = false;
 
                 state->entropy_got = 0;
@@ -2127,6 +2153,8 @@ static INT_PTR CALLBACK MainDlgProc(HWND hwnd, UINT msg,
                     if (ret <= 0) {
                         MessageBox(hwnd, err ? err : "Unable to save key file",
                                    "PuTTYgen Error", MB_OK | MB_ICONERROR);
+                    } else {
+                        state->key_dirty = false;
                     }
                     sfree(err);
                     filename_free(fn);
@@ -2161,7 +2189,7 @@ static INT_PTR CALLBACK MainDlgProc(HWND hwnd, UINT msg,
                     }
                     fp = f_open(fn, "w", false);
                     if (!fp) {
-                        MessageBox(hwnd, "Unable to open key file",
+                        MessageBox(hwnd, "Unable to open key file for writing",
                                    "PuTTYgen Error", MB_OK | MB_ICONERROR);
                     } else {
                         if (state->ssh2) {
@@ -2184,12 +2212,18 @@ static INT_PTR CALLBACK MainDlgProc(HWND hwnd, UINT msg,
                 }
             }
             break;
+          case IDC_KEYDISPLAY:
+            if (HIWORD(wParam) == EN_SETFOCUS)
+                SendMessage(GetDlgItem(hwnd, IDC_KEYDISPLAY), EM_SETSEL, 0, -1);
+            break;
           case IDC_LOAD:
           case IDC_IMPORT:
             if (HIWORD(wParam) != BN_CLICKED)
                 break;
             state =
                 (struct MainDlgState *) GetWindowLongPtr(hwnd, GWLP_USERDATA);
+            if (!confirm_key_discard(hwnd, state, false))
+                break;
             if (!state->generation_thread_exists) {
                 Filename *fn = request_file(
                     hwnd, "Load private key:", NULL, false, NULL, false,
@@ -2248,6 +2282,7 @@ static INT_PTR CALLBACK MainDlgProc(HWND hwnd, UINT msg,
         state = (struct MainDlgState *) GetWindowLongPtr(hwnd, GWLP_USERDATA);
         state->generation_thread_exists = false;
         state->key_exists = true;
+        state->key_dirty = true;
         SendDlgItemMessage(hwnd, IDC_PROGRESS, PBM_SETRANGE, 0,
                            MAKELPARAM(0, PROGRESSRANGE));
         SendDlgItemMessage(hwnd, IDC_PROGRESS, PBM_SETPOS, PROGRESSRANGE, 0);
@@ -2385,12 +2420,15 @@ static INT_PTR CALLBACK MainDlgProc(HWND hwnd, UINT msg,
       }
       case WM_CLOSE:
         state = (struct MainDlgState *) GetWindowLongPtr(hwnd, GWLP_USERDATA);
+        if (!confirm_key_discard(hwnd, state, true))
+            break;
         sfree(state);
         quit_help(hwnd);
         EndDialog(hwnd, 1);
         return 0;
     }
     return 0;
+#undef hwnd
 }
 
 void cleanup_exit(int code)
@@ -2405,7 +2443,7 @@ static NORETURN void opt_error(const char *fmt, ...)
 {
     va_list ap;
     va_start(ap, fmt);
-    char *msg = dupvprintf(fmt, ap);
+    char *msg = l10n_dupvprintf(fmt, ap);
     va_end(ap);
 
     MessageBox(NULL, msg, "PuTTYgen command line error", MB_ICONERROR | MB_OK);

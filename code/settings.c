@@ -7,10 +7,13 @@
 #include <stdlib.h>
 #include "putty.h"
 #include "storage.h"
+#include "winwallp.h"
 #ifndef NO_GSSAPI
 #include "ssh/gssc.h"
 #include "ssh/gss.h"
 #endif
+
+#undef sprintf /* no auto translate */
 
 #ifdef PUTTY_CAC
 #include "cert_common.h"
@@ -666,7 +669,7 @@ void save_open_settings(settings_w *sesskey, Conf *conf)
 #endif
                     );
 
-    for (i = 0; i < 22; i++) {
+    for (i = 0; i < 24; i++) {
         char buf[20], buf2[30];
         sprintf(buf, "Colour%d", i);
         sprintf(buf2, "%d,%d,%d",
@@ -997,13 +1000,14 @@ void load_open_settings(settings_r *sesskey, Conf *conf)
 #endif
                  );
 
-    for (i = 0; i < 22; i++) {
+    for (i = 0; i < 24; i++) {
         static const char *const defaults[] = {
             "187,187,187", "255,255,255", "0,0,0", "85,85,85", "0,0,0",
             "0,255,0", "0,0,0", "85,85,85", "187,0,0", "255,85,85",
             "0,187,0", "85,255,85", "187,187,0", "255,255,85", "0,0,187",
             "85,85,255", "187,0,187", "255,85,255", "0,187,187",
-            "85,255,255", "187,187,187", "255,255,255"
+            "85,255,255", "187,187,187", "255,255,255",
+            "0,0,0", "255,0,0"
         };
         char buf[20], *buf2;
         int c0, c1, c2;
@@ -1052,6 +1056,11 @@ void load_open_settings(settings_r *sesskey, Conf *conf)
      * The empty default for LineCodePage will be converted later
      * into a plausible default for the locale.
      */
+    {
+        char buf[32];
+        get_l10n_setting("_LINECODEPAGE_", buf, lenof(buf));
+        gpps(sesskey, "LineCodePage", buf, conf, CONF_line_codepage);
+    }
 
     gppmap(sesskey, "PortForwardings", conf, CONF_portfwd);
     {

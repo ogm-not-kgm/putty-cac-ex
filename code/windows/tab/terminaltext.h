@@ -5,6 +5,7 @@
 #include <memory>
 #include <string>
 #include <vector>
+#include <commdlg.h>
 #include "winutils.h"
 
 // Import the sibling's C layouts with C++-compatible declarations.
@@ -21,6 +22,22 @@ extern "C"
 #include "terminal.h"
 #include "win-gui-seat.h"
 }
+#undef GetModuleFileNameA
+#undef GetModuleFileNameW
+#undef MultiByteToWideChar
+#undef WideCharToMultiByte
+#undef MessageBoxA
+#undef CreateWindowExA
+#undef CreateWindowExW
+#undef DialogBoxParamA
+#undef CreateDialogParamA
+#undef GetOpenFileNameA
+#undef GetOpenFileNameW
+#undef GetSaveFileNameA
+#undef GetSaveFileNameW
+#undef sprintf
+#undef vsnprintf
+#undef dupprintf
 #pragma pop_macro("max")
 #pragma pop_macro("min")
 #pragma pop_macro("plug_log")

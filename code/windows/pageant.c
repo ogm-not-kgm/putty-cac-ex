@@ -8,6 +8,7 @@
 #include <ctype.h>
 #include <assert.h>
 #include <tchar.h>
+#include <malloc.h>
 
 #include "putty.h"
 #include "ssh.h"
@@ -17,7 +18,10 @@
 #include "cryptoapi.h"
 #include "pageant.h"
 #include "licence.h"
+#include "ini.h"
 #include "pageant-rc.h"
+#include "platform.h"
+#include "winl10n.h"
 
 #include <shellapi.h>
 
@@ -37,8 +41,14 @@ bool pageant_ssh2_blob_is_provider(ptrlen blob);
 
 #define WM_SYSTRAY   (WM_APP + 6)
 #define WM_SYSTRAY2  (WM_APP + 7)
+#define TID_ADDSYSTRAY  1
+#define TID_DEFERRED_REENCRYPT  500
+#define TID_REENCRYPT_IDLE      501
+#define TID_REENCRYPT_TIMEOUT   502
 
 #define APPNAME "Pageant"
+
+const char *const appname = APPNAME;
 
 /* Titles and class names for invisible windows. IPCWINTITLE and
  * IPCCLASSNAME are critical to backwards compatibility: WM_COPYDATA
@@ -56,8 +66,16 @@ static HMENU systray_menu, session_menu;
 static bool already_running;
 static FingerprintType fptype = SSH_FPTYPE_DEFAULT;
 
+static bool confirm_any_request = false;
+static int defer_reencrypt_state = 0;
+static bool deferred_reencrypt;
+static struct {
+    bool on_suspend, on_display_off, on_away, on_lid_close;
+    int idle_ms, timeout_ms;
+} reencrypt_settings;
 static char *putty_path;
 static bool restrict_putty_acl = false;
+static bool cmd_confirm_open;
 
 /* CWD for "add key" file requester. */
 static filereq_saved_dir *keypath = NULL;
@@ -76,11 +94,21 @@ static filereq_saved_dir *keypath = NULL;
 #define IDM_HELP               0x0070
 #define IDM_ABOUT              0x0080
 #define IDM_PUTTY              0x0090
+#define IDM_CONFIRM_REQUEST    0x0210
 #define IDM_SESSIONS_BASE      0x1000
 #define IDM_SESSIONS_MAX       0x2000
 #define PUTTY_REGKEY      "Software\\SimonTatham\\PuTTY\\Sessions"
 #define PUTTY_DEFAULT     "Default%20Settings"
 static int initial_menuitems_count;
+
+static const char HEADER[] = "Session:";
+
+#undef AppendMenu
+#define AppendMenu(m, f, i, t) l10nAppendMenu(m, f, i, t)
+LRESULT l10nSendDlgItemMessage(HWND dialog, int id, UINT msg, WPARAM wp, LPARAM lp);
+
+#define pageant_reencrypt_all() USE_gui_reencrypt_all_INSTEAD()
+static void gui_reencrypt_all(void);
 
 #ifdef PUTTY_CAC
 #define IDM_ADDCAPI  0x0100
@@ -162,7 +190,7 @@ static INT_PTR CALLBACK AboutProc(HWND hwnd, UINT msg,
             ver, buildinfo_text,
             "\251 " SHORT_COPYRIGHT_DETAILS ". All rights reserved.");
         sfree(buildinfo_text);
-        SetDlgItemText(hwnd, IDC_ABOUT_TEXTBOX, text);
+        SetDlgItemTextCp1252(hwnd, IDC_ABOUT_TEXTBOX, text);
         MakeDlgItemBorderless(hwnd, IDC_ABOUT_TEXTBOX);
         sfree(text);
         return 1;
@@ -183,7 +211,7 @@ static INT_PTR CALLBACK AboutProc(HWND hwnd, UINT msg,
           case IDC_ABOUT_WEBSITE:
             /* Load web browser */
             ShellExecute(hwnd, "open",
-                         "https://www.chiark.greenend.org.uk/~sgtatham/putty/",
+                         "https://www.ranvis.com/putty",
                          0, 0, SW_SHOWDEFAULT);
             return 0;
         }
@@ -204,6 +232,9 @@ static void end_passphrase_dialog(HWND hwnd, INT_PTR result)
     struct PassphraseProcStruct *p = (struct PassphraseProcStruct *)
         GetWindowLongPtr(hwnd, GWLP_USERDATA);
 
+    if (reencrypt_settings.timeout_ms) {
+        SetTimer(traywindow, TID_REENCRYPT_TIMEOUT, reencrypt_settings.timeout_ms, NULL);
+    }
     if (p->modal) {
         EndDialog(hwnd, result);
     } else {
@@ -243,6 +274,9 @@ static INT_PTR CALLBACK PassphraseProc(HWND hwnd, UINT msg,
     struct PassphraseProcStruct *p;
 
     if (msg == WM_INITDIALOG) {
+        if (reencrypt_settings.timeout_ms) {
+            KillTimer(traywindow, TID_REENCRYPT_TIMEOUT);
+        }
         p = (struct PassphraseProcStruct *) lParam;
         SetWindowLongPtr(hwnd, GWLP_USERDATA, (LONG_PTR) p);
     } else {
@@ -333,7 +367,7 @@ void old_keyfile_warning(void)
         "You can perform this conversion by loading the key\n"
         "into PuTTYgen and then saving it again.";
 
-    MessageBox(NULL, message, mbtitle, MB_OK);
+    MessageBox(traywindow, message, mbtitle, MB_OK);
 }
 
 struct keylist_update_ctx {
@@ -429,9 +463,13 @@ static void keylist_update_callback(
     if (ctx->hashwidth < sz.cx) ctx->hashwidth = sz.cx;
 
     if (ext_flags & LIST_EXTENDED_FLAG_HAS_NO_CLEARTEXT_KEY) {
-        put_fmt(disp->info, "(encrypted)");
+        char *text = l10n_dupstr("(encrypted)");
+        put_fmt(disp->info, text);
+        sfree(text);
     } else if (ext_flags & LIST_EXTENDED_FLAG_HAS_ENCRYPTED_KEY_FILE) {
-        put_fmt(disp->info, "(re-encryptable)");
+        char *text = l10n_dupstr("(re-encryptable)");
+        put_fmt(disp->info, text);
+        sfree(text);
 
         /* At least one key can be re-encrypted */
         ctx->enable_reencrypt_controls = true;
@@ -623,6 +661,355 @@ static void prompt_add_keyfile(bool encrypted)
     }
 }
 
+struct ConfirmAcceptAgentProcStruct {
+    int type;
+    const char* fingerprint;
+    int dont_ask_again;
+    DWORD tickCount;
+    int delay, timeout;
+};
+
+#define DELAY_TIMER_ID 1
+#define TIMEOUT_TIMER_ID 2
+
+INT_PTR CALLBACK ConfirmAcceptAgentProc(HWND dialog, UINT message, WPARAM wParam, LPARAM lParam) {
+    BOOL l10nSetDlgItemText(HWND dialog, int id, LPCSTR text);
+
+    switch (message) {
+    case WM_INITDIALOG:
+        {
+            struct ConfirmAcceptAgentProcStruct* info = (struct ConfirmAcceptAgentProcStruct*) lParam;
+            const char* s;
+            SetWindowLongPtr(dialog, DWLP_USER, lParam);
+            switch (info->type) {
+            case SSH1_AGENTC_RSA_CHALLENGE:
+            case SSH2_AGENTC_SIGN_REQUEST:
+                s = "Accept query of the following key?";
+                break;
+            case SSH1_AGENTC_ADD_RSA_IDENTITY:
+            case SSH2_AGENTC_ADD_IDENTITY:
+                s = "Accept addition of the following key?";
+                break;
+            case SSH1_AGENTC_REMOVE_RSA_IDENTITY:
+            case SSH2_AGENTC_REMOVE_IDENTITY:
+                s = "Accept deletion of the following key?";
+                break;
+            case SSH1_AGENTC_REMOVE_ALL_RSA_IDENTITIES:
+                s = "Accept deletion of all SSH1 identities?";
+                break;
+            case SSH2_AGENTC_REMOVE_ALL_IDENTITIES:
+                s = "Accept deletion of all SSH2 identities?";
+                break;
+            default:
+                EndDialog(dialog, IDNO);
+                return FALSE;
+            }
+            l10nSetDlgItemText(dialog, 100, s);
+            if (info->fingerprint != NULL)
+                SetDlgItemText(dialog, 101, info->fingerprint);
+
+            SendDlgItemMessage(dialog, 102, BM_SETCHECK, info->dont_ask_again >= 0 ? BST_CHECKED : BST_UNCHECKED, 0);
+            SendMessage(dialog, WM_NEXTDLGCTL, (WPARAM) GetDlgItem(dialog, info->dont_ask_again > 0 ? IDYES : IDNO), TRUE);
+
+            info->delay = app_conf_get_int("ConfirmDelayMs", 400, 0, 10000);
+            if (info->delay) {
+                SetTimer(dialog, DELAY_TIMER_ID, info->delay, NULL);
+                EnableWindow(GetDlgItem(dialog, IDYES), FALSE);
+            }
+            info->timeout = app_conf_get_int("ConfirmTimeout", 30, 0, 3600) * 1000;
+            if (info->timeout) {
+                info->tickCount = GetTickCount();
+                SetTimer(dialog, TIMEOUT_TIMER_ID, 1000, NULL);
+            }
+            if (app_conf_get_int("ConfirmDefaultYes", 0, 0, 1)) {
+                SendMessage(dialog, DM_SETDEFID, IDYES, 0);
+            }
+        }
+        return FALSE;
+
+    case WM_TIMER:
+        if (wParam == TIMEOUT_TIMER_ID) {
+            struct ConfirmAcceptAgentProcStruct* info = (struct ConfirmAcceptAgentProcStruct*) GetWindowLongPtr(dialog, DWLP_USER);
+            if ((GetTickCount() - info->tickCount) > info->timeout) {
+                SendDlgItemMessage(dialog, 102, BM_SETCHECK, BST_UNCHECKED, 0);
+                SendMessage(dialog, WM_COMMAND, MAKEWPARAM(info->dont_ask_again > 0 ? IDYES : IDNO, BN_CLICKED), 0);
+            }
+            return TRUE;
+        } else if (wParam == DELAY_TIMER_ID) {
+            EnableWindow(GetDlgItem(dialog, IDYES), TRUE);
+            KillTimer(dialog, wParam);
+        }
+        break;
+
+    case WM_COMMAND:
+        switch (wParam) {
+        case MAKEWPARAM(IDYES, BN_CLICKED):
+        case MAKEWPARAM(IDNO, BN_CLICKED):
+            {
+                struct ConfirmAcceptAgentProcStruct* info = (struct ConfirmAcceptAgentProcStruct*) GetWindowLongPtr(dialog, DWLP_USER);
+                info->dont_ask_again = SendDlgItemMessage(dialog, 102, BM_GETCHECK, 0, 0) == BST_CHECKED;
+                EndDialog(dialog, LOWORD(wParam));
+            }
+            return TRUE;
+        }
+        break;
+    }
+    return FALSE;
+}
+
+static int do_accept_agent_request(int type, const RSAKey *rsaKey, const ssh2_userkey *ssh2UserKey)
+{
+    static const char VALUE_ACCEPT[] = "accept";
+    static const char VALUE_REFUSE[] = "refuse";
+
+    const char* keyname;
+    char* fingerprint = NULL;
+    const size_t fingerprint_length = 512;
+    int accept = -1;
+
+    switch (type) {
+    case SSH1_AGENTC_RSA_CHALLENGE:
+    case SSH2_AGENTC_SIGN_REQUEST:
+        keyname = "QUERY:";
+        break;
+    case SSH1_AGENTC_ADD_RSA_IDENTITY:
+        keyname = "ADD:";
+        break;
+    case SSH2_AGENTC_ADD_IDENTITY:
+        keyname = "ADD:";
+        break;
+    case SSH1_AGENTC_REMOVE_RSA_IDENTITY:
+        keyname = "REMOVE:";
+        break;
+    case SSH2_AGENTC_REMOVE_IDENTITY:
+        keyname = "REMOVE:";
+        break;
+    case SSH1_AGENTC_REMOVE_ALL_RSA_IDENTITIES:
+        keyname = "SSH1_REMOVE_ALL";
+        break;
+    case SSH2_AGENTC_REMOVE_ALL_IDENTITIES:
+        keyname = "SSH2_REMOVE_ALL";
+        break;
+    default:
+        return 0;
+    }
+
+    if (type != SSH1_AGENTC_REMOVE_ALL_RSA_IDENTITIES && type != SSH2_AGENTC_REMOVE_ALL_IDENTITIES) {
+        if (rsaKey == NULL && ssh2UserKey == NULL) {
+            return 0;
+        } else {
+            size_t keyname_length = strlen(keyname);
+            char* buffer = (char*) alloca(keyname_length + fingerprint_length);
+            strcpy(buffer, keyname);
+            fingerprint = buffer + keyname_length;
+            if (rsaKey) {
+                char *rsa_fingerprint = rsa_ssh1_fingerprint((RSAKey *)rsaKey);
+                snprintf(fingerprint, fingerprint_length, "ssh1:%s", rsa_fingerprint);
+            } else {
+                char *fp = ssh2_fingerprint(ssh2UserKey->key, SSH_FPTYPE_DEFAULT);
+                const char *comment = ssh2UserKey->comment ? ssh2UserKey->comment : ""; // comment should always be non-null, but just in case
+                snprintf(fingerprint, fingerprint_length, "%s %s", fp, comment);
+            }
+            keyname = buffer;
+        }
+    }
+
+    if (!confirm_any_request && keyname) {
+        char *value = NULL;
+        if (get_use_inifile()) {
+            value = get_ini_sz(APPNAME, keyname, inifile);
+        } else {
+            HKEY hkey = open_regkey_ro(HKEY_CURRENT_USER, PUTTY_REG_POS "\\" APPNAME);
+            if (hkey) {
+                value = get_reg_sz(hkey, keyname);
+                close_regkey(hkey);
+            }
+        }
+        if (value && strcmp(value, VALUE_ACCEPT) == 0)
+            accept = 1;
+        else if (value && strcmp(value, VALUE_REFUSE) == 0)
+            accept = 0;
+        else
+            accept = -1;
+        sfree(value);
+        if (accept >= 0)
+            return accept;
+    }
+
+    {
+        struct ConfirmAcceptAgentProcStruct info = {
+            type,
+            fingerprint,
+            accept,
+        };
+        HWND focus = GetForegroundWindow();
+        DWORD focusThreadId = focus != NULL ? GetWindowThreadProcessId(focus, NULL) : 0;
+        DWORD currentThreadId = GetCurrentThreadId();
+        if (focusThreadId != 0 && focusThreadId != currentThreadId)
+            AttachThreadInput(currentThreadId, focusThreadId, TRUE);
+        SetForegroundWindow(traywindow);
+        if (focusThreadId != 0 && focusThreadId != currentThreadId)
+            AttachThreadInput(currentThreadId, focusThreadId, FALSE);
+        accept = DialogBoxParam(hinst, MAKEINTRESOURCE(300), traywindow, ConfirmAcceptAgentProc, (LPARAM) &info) == IDYES ? 1 : 0;
+        if (focus != NULL)
+            SetForegroundWindow(focus);
+
+        if (keyname != NULL) {
+            if (get_use_inifile()) {
+                put_ini_sz(APPNAME, keyname, info.dont_ask_again ? accept ? VALUE_ACCEPT : VALUE_REFUSE : NULL, inifile);
+            } else {
+                HKEY hkey;
+                if (info.dont_ask_again) {
+                    hkey = create_regkey(HKEY_CURRENT_USER, PUTTY_REG_POS "\\" APPNAME);
+                    if (hkey) {
+                        put_reg_sz(hkey, keyname, (accept ? VALUE_ACCEPT : VALUE_REFUSE));
+                        close_regkey(hkey);
+                    }
+                } else {
+                    hkey = open_regkey_rw(HKEY_CURRENT_USER, PUTTY_REG_POS "\\" APPNAME);
+                    if (hkey) {
+                        del_regkey(hkey, keyname);
+                        close_regkey(hkey);
+                    }
+                }
+            }
+        }
+        return accept;
+    }
+}
+
+void notify_agent_make_op(int type)
+{
+    if (reencrypt_settings.idle_ms) {
+        SetTimer(traywindow, TID_REENCRYPT_IDLE, reencrypt_settings.idle_ms, NULL);
+    }
+}
+
+static void defer_reencrypt(bool flag)
+{
+    if (flag) {
+        defer_reencrypt_state++;
+    } else {
+        assert(defer_reencrypt_state);
+        if (!--defer_reencrypt_state && deferred_reencrypt) {
+            deferred_reencrypt = false;
+            SetTimer(traywindow, TID_DEFERRED_REENCRYPT, 3000, NULL);
+        }
+    }
+}
+
+int accept_agent_request(int type, const RSAKey *rsaKey, const ssh2_userkey *ssh2UserKey)
+{
+    int result;
+    defer_reencrypt(true);
+    result = do_accept_agent_request(type, rsaKey, ssh2UserKey);
+    defer_reencrypt(false);
+    return result;
+}
+
+#if _WIN32_WINNT < 0x0602 /* not exactly sure from which version it is defined */
+const GUID GUID_SESSION_DISPLAY_STATUS = { 0x2b84c20e, 0xad23, 0x4ddf,{ 0x93, 0xdb, 0x5, 0xff, 0xbd, 0x7e, 0xfc, 0xa5 } };
+#endif
+
+static char *parse_reencrypt_settings(const char *_cfg)
+{
+    char *error = NULL;
+    char *cfg = dupstr(_cfg);
+    char *p = cfg;
+    while (*p) {
+        char *pTail = strchr(p, ',');
+        bool negate = *p == '-';
+        char *pFlag = negate ? p + 1 : p;
+        if (pTail) {
+            *pTail = 0;
+        }
+        if (!*p) {
+            /* empty */
+        } else if (!strcmp(p, "any_event")) {
+            reencrypt_settings.on_suspend =
+                reencrypt_settings.on_display_off =
+                reencrypt_settings.on_away =
+                reencrypt_settings.on_lid_close = true;
+        } else if (!strcmp(pFlag, "suspend")) {
+            reencrypt_settings.on_suspend = !negate;
+        } else if (!strcmp(pFlag, "display_off")) {
+            reencrypt_settings.on_display_off = !negate;
+        } else if (!strcmp(pFlag, "away")) {
+            reencrypt_settings.on_away = !negate;
+        } else if (!strcmp(pFlag, "lid_close")) {
+            reencrypt_settings.on_lid_close = !negate;
+        } else {
+            int *dest = NULL;
+            char *pVal, *pError;
+            double value;
+            if (!strncmp(p, "idle:", 5)) {
+                dest = &reencrypt_settings.idle_ms;
+                pVal = p + 5;
+            } else if (!strncmp(p, "timeout:", 8)) {
+                dest = &reencrypt_settings.timeout_ms;
+                pVal = p + 8;
+            } else {
+                error = dupprintf("unrecognised re-encrypt option\n'%s'", p);
+                goto cleanup;
+            }
+            value = strtod(pVal, &pError);
+            if (pError != NULL) {
+                if (pVal == pError) {
+                    value = 0;
+                } else if (!strcmp(pError, "s")) {
+                    value /= 60;
+                } else if (!strcmp(pError, "m")) {
+                    /* nothing */
+                } else if (!strcmp(pError, "h")) {
+                    value *= 60;
+                } else if (!strcmp(pError, "d")) {
+                    value *= 60 * 24;
+                } else if (*pError) {
+                    value = 0;
+                }
+            }
+            if (value >= 1 && value <= 14400) {
+                *dest = value * 60 * 1000;
+            } else {
+                error = dupprintf("re-encrypt time in minutes must be between %d and %d\n'%s'", 1, 14400, p);
+                goto cleanup;
+            }
+        }
+        if (!pTail) {
+            break;
+        }
+        p = pTail + 1;
+    }
+    cleanup:
+    sfree(cfg);
+    return error;
+}
+
+static void register_power_notifications(void)
+{
+    struct {
+        bool enabled;
+        const GUID *guid;
+    } subscribers[] = {
+        { reencrypt_settings.on_display_off, &GUID_CONSOLE_DISPLAY_STATE },
+        { reencrypt_settings.on_away, &GUID_SYSTEM_AWAYMODE },
+        { reencrypt_settings.on_lid_close, &GUID_LIDSWITCH_STATE_CHANGE },
+    };
+    bool someFailed = false;
+    for (size_t i = 0; i < lenof(subscribers); i++) {
+        if (subscribers[i].enabled) {
+            HPOWERNOTIFY h = RegisterPowerSettingNotification(traywindow, subscribers[i].guid, DEVICE_NOTIFY_WINDOW_HANDLE);
+            if (h == NULL) {
+                someFailed = true;
+            }
+        }
+    }
+    if (someFailed) {
+        MessageBox(NULL, "some of the reencrypt event will not be notified from Windows.",
+            "Pageant error", MB_ICONERROR | MB_OK);
+    }
+}
+
 /*
  * Dialog-box function for the key list box.
  */
@@ -668,7 +1055,7 @@ static INT_PTR CALLBACK KeyListProc(HWND hwnd, UINT msg,
 
         int selection = 0;
         for (size_t i = 0; i < lenof(fptypes); i++) {
-            SendDlgItemMessage(hwnd, IDC_KEYLIST_FPTYPE, CB_ADDSTRING,
+            l10nSendDlgItemMessage(hwnd, IDC_KEYLIST_FPTYPE, CB_ADDSTRING,
                                0, (LPARAM)fptypes[i].name);
             if (fptype == fptypes[i].value)
                 selection = (int)i;
@@ -1075,9 +1462,14 @@ static BOOL AddTrayIcon(HWND hwnd)
     tnid.uFlags = NIF_MESSAGE | NIF_ICON | NIF_TIP;
     tnid.uCallbackMessage = WM_SYSTRAY;
     tnid.hIcon = hicon = LoadIcon(hinst, MAKEINTRESOURCE(201));
-    strcpy(tnid.szTip, "Pageant (PuTTY authentication agent)");
+    char buf[lenof(tnid.szTip)];
+    const char *tip_str = l10n_translate("Pageant (PuTTY authentication agent)", buf);
+    strncpy(tnid.szTip, tip_str, lenof(tnid.szTip));
+    tnid.szTip[lenof(tnid.szTip) - 1] = '\0';
 
     res = Shell_NotifyIcon(NIM_ADD, &tnid);
+    if (!res)
+        SetTimer(hwnd, TID_ADDSYSTRAY, 1000, NULL);
 
     if (hicon) DestroyIcon(hicon);
 
@@ -1097,6 +1489,44 @@ static void update_sessions(void)
 
     if (!putty_path)
         return;
+
+    if (get_use_inifile()) {
+        ini_sections *sects = enum_ini_sections(inifile);
+
+        for (num_entries = GetMenuItemCount(session_menu);
+            num_entries > initial_menuitems_count;
+            num_entries--)
+            RemoveMenu(session_menu, 0, MF_BYPOSITION);
+
+        index_menu = 0;
+        sb = strbuf_new();
+        while (enum_ini_section_next(sects, sb, HEADER)) {
+            if (strcmp(buf, PUTTY_DEFAULT) != 0) {
+                memset(&mii, 0, sizeof(mii));
+                mii.cbSize = sizeof(mii);
+                mii.fMask = MIIM_TYPE | MIIM_STATE | MIIM_ID;
+                mii.fType = MFT_STRING;
+                mii.fState = MFS_ENABLED;
+                mii.wID = (index_menu * 16) + IDM_SESSIONS_BASE;
+                mii.dwTypeData = sb->s;
+                InsertMenuItem(session_menu, index_menu, TRUE, &mii);
+                index_menu++;
+            }
+            strbuf_clear(sb);
+        }
+        strbuf_free(sb);
+        enum_ini_section_finish(sects);
+
+        if(index_menu == 0) {
+            mii.cbSize = sizeof(mii);
+            mii.fMask = MIIM_TYPE | MIIM_STATE;
+            mii.fType = MFT_STRING;
+            mii.fState = MFS_GRAYED;
+            mii.dwTypeData = _T("(No sessions)");
+            InsertMenuItem(session_menu, index_menu, TRUE, &mii);
+        }
+        return;
+    }
 
     if (ERROR_SUCCESS != RegOpenKey(HKEY_CURRENT_USER, PUTTY_REGKEY, &hkey))
         return;
@@ -1494,6 +1924,20 @@ static LRESULT CALLBACK TrayWndProc(HWND hwnd, UINT message,
             menuinprogress = false;
         }
         break;
+      case WM_TIMER:
+          switch (wParam) {
+          case TID_ADDSYSTRAY:
+              KillTimer(hwnd, TID_ADDSYSTRAY);
+              AddTrayIcon(hwnd);
+              break;
+          case TID_DEFERRED_REENCRYPT:
+          case TID_REENCRYPT_IDLE:
+          case TID_REENCRYPT_TIMEOUT:
+              KillTimer(hwnd, wParam);
+              gui_reencrypt_all();
+              break;
+          }
+          break;
       case WM_COMMAND:
       case WM_SYSCOMMAND: {
         unsigned command = wParam & ~0xF; /* low 4 bits reserved to Windows */
@@ -1506,7 +1950,7 @@ static LRESULT CALLBACK TrayWndProc(HWND hwnd, UINT message,
 
             if ((INT_PTR)ShellExecute(hwnd, NULL, putty_path, cmdline,
                                       _T(""), SW_SHOW) <= 32) {
-                MessageBox(NULL, "Unable to execute PuTTY!",
+                MessageBox(hwnd, "Unable to execute PuTTY!",
                            "Error", MB_OK | MB_ICONERROR);
             }
             break;
@@ -1627,18 +2071,26 @@ static LRESULT CALLBACK TrayWndProc(HWND hwnd, UINT message,
 		  cert_ignore_expired_certs(IgnoreExpiredCerts ? CERT_SET : CERT_UNSET);
 	  } break;
 #endif // PUTTY_CAC
-          case IDM_REMOVE_ALL:
+          case IDM_REMOVE_ALL: {
+            if (cmd_confirm_open)
+                break;
+            cmd_confirm_open = true;
+            int result = MessageBox(hwnd, "Remove all keys from the list?",
+                APPNAME, MB_YESNO | MB_SYSTEMMODAL);
+            cmd_confirm_open = false;
+            if (result != IDYES)
+                break;
             pageant_delete_all();
             keylist_update();
             break;
+          }
           case IDM_REENCRYPT_ALL:
-            pageant_reencrypt_all();
-            keylist_update();
+            gui_reencrypt_all();
             break;
           case IDM_ABOUT:
             if (!aboutbox) {
                 aboutbox = CreateDialog(hinst, MAKEINTRESOURCE(IDD_ABOUT),
-                                        NULL, AboutProc);
+                                        hwnd, AboutProc);
                 ShowWindow(aboutbox, SW_SHOWNORMAL);
                 /*
                  * Sometimes the window comes up minimised / hidden
@@ -1651,6 +2103,14 @@ static LRESULT CALLBACK TrayWndProc(HWND hwnd, UINT message,
             break;
           case IDM_HELP:
             launch_help(hwnd, WINHELP_CTX_pageant_general);
+            break;
+          case IDM_CONFIRM_REQUEST:
+            {
+                MENUITEMINFO mii = {sizeof mii, MIIM_STATE};
+                confirm_any_request = !confirm_any_request;
+                mii.fState = confirm_any_request ? MFS_CHECKED : MFS_UNCHECKED;
+                SetMenuItemInfo(systray_menu, IDM_CONFIRM_REQUEST, FALSE, &mii);
+            }
             break;
           default: {
             if (wParam >= IDM_SESSIONS_BASE && wParam <= IDM_SESSIONS_MAX) {
@@ -1670,7 +2130,7 @@ static LRESULT CALLBACK TrayWndProc(HWND hwnd, UINT message,
                 strcat(param, mii.dwTypeData);
                 if ((INT_PTR)ShellExecute(hwnd, NULL, putty_path, param,
                                           _T(""), SW_SHOW) <= 32) {
-                    MessageBox(NULL, "Unable to execute PuTTY!", "Error",
+                    MessageBox(hwnd, "Unable to execute PuTTY!", "Error",
                                MB_OK | MB_ICONERROR);
                 }
             }
@@ -1687,6 +2147,41 @@ static LRESULT CALLBACK TrayWndProc(HWND hwnd, UINT message,
         quit_help(hwnd);
         PostQuitMessage(0);
         return 0;
+      case WM_POWERBROADCAST:
+          switch (wParam) {
+          case PBT_APMSUSPEND:
+              if (lParam == 0) { /* reserved must be 0 */
+                  if (reencrypt_settings.on_suspend) {
+                      gui_reencrypt_all();
+                  }
+                  return true;
+              }
+              break;
+          case PBT_POWERSETTINGCHANGE: {
+              const POWERBROADCAST_SETTING *pbcSetting = (const POWERBROADCAST_SETTING *)lParam;
+              if (IsEqualGUID(&pbcSetting->PowerSetting, &GUID_CONSOLE_DISPLAY_STATE)) {
+                  DWORD data = *(const DWORD *)pbcSetting->Data;
+                  if (data == 0 && reencrypt_settings.on_display_off) { /* display is off */
+                      gui_reencrypt_all();
+                  }
+                  return true;
+              } else if (IsEqualGUID(&pbcSetting->PowerSetting, &GUID_SYSTEM_AWAYMODE)) {
+                  DWORD data = *(const DWORD *)pbcSetting->Data;
+                  if (data == 1 && reencrypt_settings.on_away) { /* entering away mode */
+                      gui_reencrypt_all();
+                  }
+                  return true;
+              } else if (IsEqualGUID(&pbcSetting->PowerSetting, &GUID_LIDSWITCH_STATE_CHANGE)) {
+                  ULONG data = *(const ULONG *)pbcSetting->Data;
+                  if (data == 0 && reencrypt_settings.on_lid_close) { /* lid is closed */
+                      gui_reencrypt_all();
+                  }
+                  return true;
+              }
+              break;
+          }
+        }
+        break;
     }
 
     return DefWindowProc(hwnd, message, wParam, lParam);
@@ -1750,7 +2245,7 @@ void spawn_cmd(const char *cmdline, const char *args, int show)
         char *msg;
         msg = dupprintf("Failed to run \"%s\": %s", cmdline,
                         win_strerror(GetLastError()));
-        MessageBox(NULL, msg, APPNAME, MB_OK | MB_ICONEXCLAMATION);
+        MessageBox(traywindow, msg, APPNAME, MB_OK | MB_ICONEXCLAMATION);
         sfree(msg);
     }
 }
@@ -1789,7 +2284,7 @@ static NORETURN void opt_error(const char *fmt, ...)
 {
     va_list ap;
     va_start(ap, fmt);
-    char *msg = dupvprintf(fmt, ap);
+    char *msg = l10n_dupvprintf(fmt, ap);
     va_end(ap);
 
     MessageBox(NULL, msg, "Pageant command line error", MB_ICONERROR | MB_OK);
@@ -1847,6 +2342,7 @@ int WINAPI WinMain(HINSTANCE inst, HINSTANCE prev, LPSTR cmdline, int show)
             return 1;
         }
     }
+    disable_timer_ex_suppression(load_system32_dll("user32.dll"));
 
     /*
      * See if we can find our Help file.
@@ -1880,6 +2376,9 @@ int WINAPI WinMain(HINSTANCE inst, HINSTANCE prev, LPSTR cmdline, int show)
      * started up the main agent. Details of keys to be added are
      * stored in the 'clkeys' array.
      */
+
+    process_ini_option(opt_error);
+    confirm_any_request = (bool)app_conf_get_int("ConfirmAnyRequest", 0, 0, 1);
     bool add_keys_encrypted = false;
     AuxMatchOpt amo = aux_match_opt_init(opt_error);
     while (!aux_match_done(&amo)) {
@@ -1913,6 +2412,15 @@ int WINAPI WinMain(HINSTANCE inst, HINSTANCE prev, LPSTR cmdline, int show)
             show_keylist_on_startup = true;
         } else if (match_optval("-openssh-config", "-openssh_config")) {
             openssh_config_file = cmdline_arg_to_filename(valarg);
+        } else if (match_opt("-confirm")) {
+            confirm_any_request = true;
+        } else if (match_opt("-no-confirm", "-no_confirm", "-noconfirm")) {
+            confirm_any_request = false;
+        } else if (match_optval("-reencrypt-on", "-reencrypt_on")) {
+            char *error = parse_reencrypt_settings(cmdline_arg_to_str(valarg));
+            if (error) {
+                opt_error("%s", error);
+            }
         } else if (match_optval("-unix")) {
             /* UNICODE: should this be a Unicode filename? Is there a
              * Unicode version of connect() that lets you give a
@@ -2161,6 +2669,8 @@ int WINAPI WinMain(HINSTANCE inst, HINSTANCE prev, LPSTR cmdline, int show)
         return 0;
     }
 
+    register_power_notifications();
+
     /* Set up a system tray icon */
     AddTrayIcon(traywindow);
 
@@ -2242,6 +2752,8 @@ int WINAPI WinMain(HINSTANCE inst, HINSTANCE prev, LPSTR cmdline, int show)
     AppendMenu(systray_menu, MF_ENABLED, IDM_REENCRYPT_ALL,
                "Re-encrypt All Keys");
     AppendMenu(systray_menu, MF_SEPARATOR, 0, 0);
+    AppendMenu(systray_menu, confirm_any_request ? MF_CHECKED : MF_UNCHECKED, IDM_CONFIRM_REQUEST, "&Confirm Any Request");
+    AppendMenu(systray_menu, MF_SEPARATOR, 0, 0);
     if (has_help())
         AppendMenu(systray_menu, MF_ENABLED, IDM_HELP, "&Help");
     AppendMenu(systray_menu, MF_ENABLED, IDM_ABOUT, "&About");
@@ -2301,6 +2813,7 @@ int WINAPI WinMain(HINSTANCE inst, HINSTANCE prev, LPSTR cmdline, int show)
         tnid.cbSize = sizeof(NOTIFYICONDATA);
         tnid.hWnd = traywindow;
         tnid.uID = 1;
+        tnid.uFlags = 0;
 
         Shell_NotifyIcon(NIM_DELETE, &tnid);
 
@@ -2322,4 +2835,15 @@ int WINAPI WinMain(HINSTANCE inst, HINSTANCE prev, LPSTR cmdline, int show)
 
     cleanup_exit(msg.wParam);
     return msg.wParam;                 /* just in case optimiser complains */
+}
+
+#undef pageant_reencrypt_all
+static void gui_reencrypt_all(void)
+{
+    if (defer_reencrypt_state) {
+        deferred_reencrypt = true;
+        return;
+    }
+    pageant_reencrypt_all();
+    keylist_update();
 }

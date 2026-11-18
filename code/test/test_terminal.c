@@ -36,11 +36,20 @@ typedef struct Mock {
     strbuf *context;
 
     bool any_test_failed;
+    bool enable_draw;
 
     TermWin tw;
 } Mock;
 
-static bool mock_setup_draw_ctx(TermWin *win) { return false; }
+static bool mock_setup_draw_ctx(TermWin *win)
+{
+    Mock *mk = container_of(win, Mock, tw);
+    return mk->enable_draw;
+}
+static void mock_free_draw_ctx(TermWin *win) {}
+static int mock_char_width(TermWin *win, int uc) { return 1; }
+static void mock_set_cursor_pos(TermWin *win, int x, int y) {}
+static void mock_set_scrollbar(TermWin *win, int total, int start, int page) {}
 static void mock_draw_text(TermWin *win, int x, int y, wchar_t *text, int len,
                            unsigned long attrs, int lattrs, truecolour tc) {}
 static void mock_draw_cursor(TermWin *win, int x, int y, wchar_t *text,
@@ -56,6 +65,10 @@ static void mock_set_icon_title(TermWin *win, const char *title, int cp) {}
 
 static const TermWinVtable mock_termwin_vt = {
     .setup_draw_ctx = mock_setup_draw_ctx,
+    .free_draw_ctx = mock_free_draw_ctx,
+    .char_width = mock_char_width,
+    .set_cursor_pos = mock_set_cursor_pos,
+    .set_scrollbar = mock_set_scrollbar,
     .draw_text = mock_draw_text,
     .draw_cursor = mock_draw_cursor,
     .set_title = mock_set_title,
@@ -524,6 +537,59 @@ static void test_wintitle(Mock *mk)
     SEQUAL(mk->title->s, "bar");
 }
 
+static void test_preedit(Mock *mk)
+{
+    int saved_cp = mk->ucsdata->line_codepage;
+    mk->ucsdata->line_codepage = CP_UTF8;
+    mk->enable_draw = true;
+    reset(mk);
+
+    /* Empty preedit must not underflow or crash on paint. */
+    term_set_preedit_text(mk->term, "");
+    term_update(mk->term);
+    IEQUAL(mk->term->preedit_termline->cols, 0);
+
+    term_set_preedit_text_w(mk->term, L"", NULL, 0);
+    term_update(mk->term);
+    IEQUAL(mk->term->preedit_termline == NULL, 1);
+
+    /* Wide characters + per-clause style attributes + right-edge clamp + UCSWIDE boundary. */
+    term_datapl(mk->term, PTRLEN_LITERAL("0123456789"));
+    /* Write a wide char at col 72 (cols 72-73) and place cursor at col 78 (1-based 79). */
+    term_datapl(mk->term, PTRLEN_LITERAL("\033[1;73H\xe3\x81\x82\033[1;79H"));
+    const wchar_t wide_preedit[] = { 0x304B, 0x304D, 0x304F, L'a' }; /* かきくa (7 cols) */
+    const uint8_t styles[] = { 2, 2, 3, 1 };
+    term_set_preedit_text_w(mk->term, wide_preedit, styles, 4);
+    term_update(mk->term);
+    IEQUAL(mk->term->preedit_termline->cols, 7);
+    /* Right-edge clamp puts preedit at cols 73..79; col 72 must be blanked and col 73 not skipped! */
+    IEQUAL(mk->term->disptext[0]->chars[72].chr, mk->ucsdata->unitab_line[' ']);
+    IEQUAL(mk->term->disptext[0]->chars[73].chr, 0x304B);
+    IEQUAL(mk->term->disptext[0]->chars[73].attr & ATTR_PREEDIT_MASK, ATTR_PREEDIT_SOLID);
+    IEQUAL(mk->term->disptext[0]->chars[77].chr, 0x304F);
+    IEQUAL(mk->term->disptext[0]->chars[77].attr & ATTR_PREEDIT_MASK, ATTR_PREEDIT_TARGET);
+    IEQUAL(mk->term->disptext[0]->chars[79].chr, L'a');
+    IEQUAL(mk->term->disptext[0]->chars[79].attr & ATTR_PREEDIT_MASK, ATTR_PREEDIT_DOT);
+
+    /* Overlong preedit (>80 cols) must clamp cleanly without negative start. */
+    wchar_t long_preedit[90];
+    for (int i = 0; i < 90; i++)
+        long_preedit[i] = L'a';
+    term_set_preedit_text_w(mk->term, long_preedit, NULL, 90);
+    term_update(mk->term);
+    IEQUAL(mk->term->disptext[0]->chars[0].chr, L'a');
+    IEQUAL(mk->term->disptext[0]->chars[79].chr, L'a');
+
+    /* Clear preedit restores underlying line cleanly. */
+    term_set_preedit_text_w(mk->term, NULL, NULL, 0);
+    term_update(mk->term);
+    IEQUAL(mk->term->preedit_termline == NULL, 1);
+    IEQUAL(mk->term->disptext[0]->chars[0].chr, mk->ucsdata->unitab_line['0']);
+
+    mk->enable_draw = false;
+    mk->ucsdata->line_codepage = saved_cp;
+}
+
 int main(void)
 {
     Mock *mk = mock_new();
@@ -533,6 +599,7 @@ int main(void)
     test_wrap(mk);
     test_nonwrap(mk);
     test_wintitle(mk);
+    test_preedit(mk);
 
     bool failed = mk->any_test_failed;
     mock_free(mk);

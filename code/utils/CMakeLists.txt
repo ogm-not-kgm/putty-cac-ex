@@ -42,6 +42,7 @@ add_sources_from_current_dir(utils
   host_strcspn.c
   host_strduptrim.c
   host_strrchr.c
+  iso2022_wc.c
   key_components.c
   log_proxy_stderr.c
   make_spr_sw_abort_static.c
@@ -86,3 +87,7 @@ add_sources_from_current_dir(utils
   x11_identify_auth_proto.c
   x11_make_greeting.c
   x11_parse_ip.c)
+
+add_library(iso2022 STATIC
+  iso2022.c
+)

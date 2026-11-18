@@ -17,6 +17,10 @@ typedef enum {
     FILTER_KEY_FILES, /* .ppk */
     FILTER_DYNLIB_FILES, /* whatever the host platform uses as shared libs */
     FILTER_SOUND_FILES, /* whatever kind of sound file we can use as bell */
+
+    FILTER_IMAGE_FILES, /* basic image format(s) */
+    FILTER_IMAGE_EX_FILES, /* various image formats */
+    FILTER_ICON_FILES, /* icon files */
 } FilereqFilter;
 
 #include "defs.h"
@@ -94,9 +98,9 @@ typedef enum {
  * terminal.c itself.
  */
 
-#define CONF_NCOLOURS 22               /* 16 + 6 special ones */
-#define OSCP_NCOLOURS 22               /* same as CONF, but different order */
-#define OSC4_NCOLOURS 262              /* 256 + the same 6 special ones */
+#define CONF_NCOLOURS (22 + 2)               /* 16 + 6 special ones + 2 custom ones */
+#define OSCP_NCOLOURS (22 + 2)               /* same as CONF, but different order */
+#define OSC4_NCOLOURS (262 + 2)              /* 256 + the same 6 special ones + the same 2 custom ones */
 
 /* The list macro for the conf colours also gives the textual names
  * used in the GUI configurer */
@@ -123,6 +127,8 @@ typedef enum {
     X(cyan_bold, "ANSI Cyan Bold")              \
     X(white, "ANSI White")                      \
     X(white_bold, "ANSI White Bold")            \
+    X(cursor_fg_ime, "Cursor Text(IME ON)")     \
+    X(cursor_bg_ime, "Cursor Colour(IME ON)")   \
     /* end of list */
 
 #define OSCP_COLOUR_LIST(X)                     \
@@ -165,6 +171,9 @@ typedef enum {
     X(bg_bold)                                  \
     X(cursor_fg)                                \
     X(cursor_bg)                                \
+    /* additional colors for custom build */    \
+    X(cursor_fg_ime)                            \
+    X(cursor_bg_ime)                            \
     /* end of list */
 
 /* Enumerations of the colour lists. These are available everywhere in
@@ -267,6 +276,10 @@ extern const int colour_indices_oscp_to_osc4[OSCP_NCOLOURS];
 #define ATTR_COLOURS 0x0003FFFFU
 #define ATTR_DIM     0x01000000U
 #define ATTR_STRIKE  0x02000000U
+#define ATTR_PREEDIT_MASK   0x0C000000U
+#define ATTR_PREEDIT_DOT    0x04000000U
+#define ATTR_PREEDIT_SOLID  0x08000000U
+#define ATTR_PREEDIT_TARGET 0x0C000000U
 #define ATTR_ACTCURS 0x40000000UL      /* active cursor (block) */
 #define ATTR_PASCURS 0x20000000UL      /* passive cursor (box) */
 #define ATTR_RIGHTCURS 0x10000000UL    /* cursor-on-RHS */
@@ -283,8 +296,67 @@ struct sesslist {
     char *buffer;                      /* so memory can be freed later */
 };
 
+struct iso2022struct
+{
+  unsigned char buf[100];
+  int buflen, bufoff;
+  struct g
+  {
+    enum
+    {
+      UNKNOWN, UNSUPPORTED, US_ASCII, JISX0201_ROMAN, JISX0201_KATAKANA,
+      JISC6226_1978, JISX0208_1983, JISX0208_1990, JISX0212_1990,
+      JISX0213_1, JISX0213_2, JISX0213_2004_1, MS_KANJI,
+      GB2312_80, CSIC_SET1, CSIC_SET2, CSIC_SET3, CSIC_SET4, CSIC_SET5,
+      CSIC_SET6, CSIC_SET7, KSC5601_1987, BIG5,
+      ISO8859_1, ISO8859_2, ISO8859_3, ISO8859_4, ISO8859_5,
+      ISO8859_6, ISO8859_7, ISO8859_8, ISO8859_9, ISO8859_10,
+      VT100GRAPHICS,
+      ISO646_1973IRV, BS4730, NATS_PRIMARY_FINLAND_SWEDEN,
+      NATS_PRIMARY_DENMARK_NORWAY, DIN66003, NFZ62010_1973,
+      ISO646_ITALIAN, ISO646_SPANISH,
+      UTF8CJK, UTF8NONCJK,
+    } type;
+    int len;
+  } g0, g1, g2, g3, *gl, *gr, *ssl, *ssr, lgr, *usgr, uslgr;
+  int width;
+  bool jisx02081990flag;
+  bool esc;
+  bool lockgr, uslockgr;
+  bool ssgr;
+  bool transchar;
+  enum {
+    SWITCH_UTF8_NONE,
+    SWITCH_UTF8_TO_UTF8,
+    SWITCH_UTF8_FROM_UTF8,
+  } switch_utf8;
+  unsigned char *ins;
+  unsigned char *insw;
+  int inslen;
+};
+
+#define AUTODETECT_BUFLEN 10
+
+struct iso2022_data {
+  bool win95flag;
+  struct iso2022struct rcv, trns;
+  unsigned char initstring[512];
+  struct {
+    int n;
+    struct {
+      int n;
+      struct iso2022_autodetect_jp {
+        bool enabled;
+        unsigned char buf[AUTODETECT_BUFLEN];
+        int buflen;
+      } eucjp, mskanji, utf8cjk;
+    } jp;
+  } autodetect;
+};
+
 struct unicode_data {
     bool dbcs_screenfont;
+    bool iso2022;
     int font_codepage;
     int line_codepage;
     wchar_t unitab_scoacs[256];
@@ -293,6 +365,7 @@ struct unicode_data {
     wchar_t unitab_xterm[256];
     wchar_t unitab_oemcp[256];
     unsigned char unitab_ctrl[256];
+    struct iso2022_data iso2022_data;
 };
 
 #define LGXF_OVR  1                    /* existing logfile overwrite */
@@ -464,6 +537,11 @@ enum {
 enum {
     /* Resize actions (CONF_resize_action) */
     RESIZE_TERM, RESIZE_DISABLED, RESIZE_FONT, RESIZE_EITHER
+};
+
+enum {
+    /* Reaction for Windows' query session end message */
+    QUERY_END_NO = 0, QUERY_END_YES, QUERY_END_INACTIVE,
 };
 
 enum {
@@ -2056,6 +2134,8 @@ void term_notify_window_pos(Terminal *term, int x, int y);
 void term_notify_window_size_pixels(Terminal *term, int x, int y);
 void term_palette_override(Terminal *term, unsigned osc4_index, rgb rgb);
 void term_set_preedit_text(Terminal *term, char *preedit_text);
+void term_set_preedit_text_w(Terminal *term, const wchar_t *text,
+                             const uint8_t *styles, int len);
 
 typedef enum SmallKeypadKey {
     SKK_HOME, SKK_END, SKK_INSERT, SKK_DELETE, SKK_PGUP, SKK_PGDN,
@@ -2146,6 +2226,7 @@ void log_reconfig(LogContext *logctx, Conf *conf);
 void logfopen(LogContext *logctx);
 void logfclose(LogContext *logctx);
 void logtraffic(LogContext *logctx, unsigned char c, int logmode);
+void logtraffic_utf8(LogContext *logctx, uint32_t c);
 void logflush(LogContext *logctx);
 LogPolicy *log_get_policy(LogContext *logctx);
 void logevent(LogContext *logctx, const char *event);
@@ -2771,6 +2852,36 @@ void subproc_waiter_free(SubprocessWaiter *waiter);
 #define add_session_to_jumplist(x) ((void)0)
 #define remove_session_from_jumplist(x) ((void)0)
 #endif
+
+/*
+ * Exports from iso2022.c
+ */
+int iso2022_init (struct iso2022_data *data, const char *p, int mode);
+int iso2022_init_test (const char *p);
+void iso2022_transmit (struct iso2022_data *data, unsigned char c);
+void iso2022_put (struct iso2022_data *data, unsigned char c);
+void iso2022_clearesc (struct iso2022_data *data);
+int iso2022_width (struct iso2022_data *data, unsigned int c);
+int iso2022_width_sub (struct iso2022_data *data, unsigned int c);
+unsigned char iso2022_tgetbuf (struct iso2022_data *data);
+unsigned char iso2022_getbuf (struct iso2022_data *data);
+void iso2022_settranschar(struct iso2022_data *data, bool value);
+void iso2022_tbufclear (struct iso2022_data *data);
+int iso2022_tbuflen (struct iso2022_data *data);
+int iso2022_buflen (struct iso2022_data *data);
+void iso2022_autodetect_put (struct iso2022_data *data, unsigned char *buf,
+                             int nchars);
+
+/*
+ * Exports from l10n.c
+ */
+const char *l10n_translate_s(const char *str, char *buf, size_t len);
+#define l10n_translate(str, buf)  l10n_translate_s(str, buf, lenof(buf))
+char *l10n_dupstr(const char *);
+char *l10n_dupvprintf(const char *format, va_list ap);
+int get_l10n_setting(const char* keyname, char* buf, int size);
+
+void sleep_ticks(int ticks);
 
 /* SURROGATE PAIR */
 #ifndef HIGH_SURROGATE_START /* in some toolchains <winnls.h> defines these */

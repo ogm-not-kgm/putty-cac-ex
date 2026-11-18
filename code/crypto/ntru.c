@@ -1470,7 +1470,7 @@ static bool ntru_vt_encaps(const pq_kemalg *alg, BinarySink *c, BinarySink *k,
     ntru_decode_pubkey(pubkey, p_LIVE, q_LIVE, src);
 
     if (get_err(src) || get_avail(src)) {
-        /* Hard-fail if the input wasn't exactly the right length */ 
+        /* Hard-fail if the input wasn't exactly the right length */
         ring_free(pubkey, p_LIVE);
         return false;
     }

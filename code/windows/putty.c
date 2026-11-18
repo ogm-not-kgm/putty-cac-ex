@@ -1,10 +1,15 @@
 #include "putty.h"
 #include "storage.h"
+#include "ini.h"
 
 extern bool sesslist_demo_mode;
 extern Filename *dialog_box_demo_screenshot_filename;
 static strbuf *demo_terminal_data = NULL;
 static Filename *terminal_demo_screenshot_filename;
+
+#if defined(_DEBUG) && defined(PUTTY_WITH_SSH)
+#define DOC_DIALOG
+#endif
 
 const unsigned cmdline_tooltype =
     TOOLTYPE_HOST_ARG |
@@ -16,6 +21,9 @@ void gui_term_process_cmdline(Conf *conf, char *cmdline)
     char *p;
     bool special_launchable_argument = false;
     bool demo_config_box = false;
+#ifdef DOC_DIALOG
+    bool demo_doc_dialog = false;
+#endif
 
     settings_set_default_protocol(be_default_protocol);
     /* Find the appropriate default port. */
@@ -28,6 +36,7 @@ void gui_term_process_cmdline(Conf *conf, char *cmdline)
     }
     conf_set_int(conf, CONF_logtype, LGTYP_NONE);
 
+    process_ini_option(cmdline_error);
     do_defaults(NULL, conf);
 
     p = handle_restrict_acl_cmdline_prefix(cmdline);
@@ -120,6 +129,10 @@ void gui_term_process_cmdline(Conf *conf, char *cmdline)
                         put_data(demo_terminal_data, buf, retd);
                     fclose(fp);
                 }
+#ifdef DOC_DIALOG
+            } else if (!strcmp(p, "-demo-doc-dialog")) {
+                demo_doc_dialog = true;
+#endif
             } else if (*p != '-') {
                 cmdline_error("unexpected argument \"%s\"", p);
             } else {
@@ -141,6 +154,11 @@ void gui_term_process_cmdline(Conf *conf, char *cmdline)
         load_open_settings(NULL, conf);
         conf_set_str(conf, CONF_host, "demo-server.example.com");
         conf_set_int(conf, CONF_close_on_exit, FORCE_OFF);
+#ifdef DOC_DIALOG
+    } else if (demo_doc_dialog) {
+        extern void doc_dialog(Conf *conf);
+        doc_dialog(conf);
+#endif
     } else {
         /*
          * Bring up the config dialog if the command line hasn't
@@ -201,3 +219,50 @@ void gui_terminal_ready(HWND hwnd, Seat *seat, Backend *backend)
         schedule_timer(TICKSPERSEC, demo_terminal_screenshot, (void *)hwnd);
     }
 }
+
+#ifdef DOC_DIALOG
+#include "ssh.h"
+#include "win-gui-seat.h"
+
+static void confirm_callback(void *ctx, SeatPromptResult result) {}
+
+void doc_dialog(Conf *conf)
+{
+    sesslist_demo_mode = true;
+    load_open_settings(NULL, conf);
+    conf_set_str(conf, CONF_host, "demo-server.example.com");
+    do_config(conf);
+
+    extern const SeatVtable win_seat_vt;
+    assert(sizeof(Seat) == sizeof(struct SeatVtable));
+    Seat win_seat = {.vt = &win_seat_vt};
+    InteractionReadySeat iseat = {.seat = &win_seat};
+    const char *host = "ssh.example.com";
+    ssh_key key;
+    key.vt = &ssh_ecdsa_ed25519;
+    const char *fingerprints[8] = {0};
+    fingerprints[SSH_FPTYPE_SHA256] = "ssh-ed25519 255 SHA256:ab0Cd1Ef2Gh3Ij4KL5Mn6Op7Qr8ST9Uv+Wx/Yz...";
+    void (*callback)(void *ctx, SeatPromptResult result) = NULL;
+    void *ctx = NULL;
+    // known hosts must be cleared
+    verify_ssh_host_key(iseat, conf, host, 22, &key, "ssh-ed25519", "keystr", "keydisp", fingerprints, 0, callback, ctx); // must accept
+    verify_ssh_host_key(iseat, conf, host, 22, &key, "ssh-ed25519", "keystr2", "keydisp", fingerprints, 0, callback, ctx);
+
+    // known hosts must be cleared
+    host = "ssh.example.net";
+    key.vt = &opensshcert_ssh_ecdsa_ed25519;
+    verify_ssh_host_key(iseat, conf, host, 22, &key, "ssh-ed25519", "keystr", "keydisp", fingerprints, 1, callback, ctx); // must accept
+    verify_ssh_host_key(iseat, conf, host, 22, &key, "ssh-ed25519", "keystr2", "keydisp", fingerprints, 1, callback, ctx);
+    verify_ssh_host_key(iseat, conf, host, 22, &key, "ssh-ed25519", "keystr3", "keydisp", fingerprints, 0, callback, ctx);
+
+    const char *better_algs[] = {"BETTER", "BETTER2", NULL};
+    confirm_weak_cached_hostkey(iseat, "ANY", better_algs, confirm_callback, NULL);
+    confirm_weak_crypto_primitive(iseat, "key-exchange algorithm", "ANY", confirm_callback, NULL, WCR_BELOW_THRESHOLD);
+    confirm_weak_crypto_primitive(iseat, "host key type", "ANY", confirm_callback, NULL, WCR_BELOW_THRESHOLD);
+    confirm_weak_crypto_primitive(iseat, "client-to-server cipher", "SSH2_CIPHER", confirm_callback, NULL, WCR_BELOW_THRESHOLD);
+    confirm_weak_crypto_primitive(iseat, "client-to-server cipher", "ChaCha20-Poly1305", confirm_callback, NULL, WCR_TERRAPIN);
+    confirm_weak_crypto_primitive(iseat, "server-to-client cipher", "a CBC-mode cipher in OpenSSH ETM mode", confirm_callback, NULL, WCR_TERRAPIN_AVOIDABLE);
+
+    cleanup_exit(0);
+}
+#endif

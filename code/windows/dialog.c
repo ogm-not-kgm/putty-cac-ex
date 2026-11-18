@@ -16,6 +16,7 @@
 #include "storage.h"
 #include "dialog.h"
 #include "licence.h"
+#include "winl10n.h"
 
 #include <commctrl.h>
 #include <commdlg.h>
@@ -313,6 +314,7 @@ static INT_PTR CALLBACK LogProc(HWND hwnd, UINT msg,
         for (i = 0; i < ncircular; i++)
             SendDlgItemMessage(hwnd, IDN_LIST, LB_ADDSTRING,
                                0, (LPARAM) events_circular[(circular_first + i) % LOGEVENT_CIRCULAR_MAX]);
+        l10n_created_window(hwnd);
         update_logbox_horizontal_extent(hwnd);
 
         return 1;
@@ -386,6 +388,7 @@ static INT_PTR CALLBACK LicenceProc(HWND hwnd, UINT msg,
         SetWindowText(hwnd, str);
         sfree(str);
         SetDlgItemText(hwnd, IDA_TEXT, LICENCE_TEXT("\r\n\r\n"));
+        l10n_created_window(hwnd);
         return 1;
       }
       case WM_COMMAND:
@@ -417,11 +420,13 @@ static INT_PTR CALLBACK AboutProc(HWND hwnd, UINT msg,
         char *text = dupprintf(
             "%s\r\n\r\n%s\r\n\r\n%s\r\n\r\n%s",
             appname, ver, buildinfo_text,
-            "\251 " SHORT_COPYRIGHT_DETAILS ". All rights reserved.");
+            "\251 " SHORT_COPYRIGHT_DETAILS ". All rights reserved."
+        );
         sfree(buildinfo_text);
-        SetDlgItemText(hwnd, IDA_TEXT, text);
+        SetDlgItemTextCp1252(hwnd, IDA_TEXT, text);
         MakeDlgItemBorderless(hwnd, IDA_TEXT);
         sfree(text);
+        l10n_created_window(hwnd);
         return 1;
       }
       case WM_COMMAND:
@@ -441,7 +446,7 @@ static INT_PTR CALLBACK AboutProc(HWND hwnd, UINT msg,
           case IDA_WEB:
             /* Load web browser */
             ShellExecute(hwnd, "open",
-                         "https://www.chiark.greenend.org.uk/~sgtatham/putty/",
+                         "https://www.ranvis.com/putty",
                          0, 0, SW_SHOWDEFAULT);
             return 0;
         }
@@ -489,13 +494,14 @@ static HTREEITEM treeview_insert(struct treeview_faff *faff,
 #define INSITEM item
 #endif
     ins.INSITEM.mask = TVIF_TEXT | TVIF_PARAM;
-    ins.INSITEM.pszText = text;
-    ins.INSITEM.cchTextMax = strlen(text)+1;
+    ins.INSITEM.pszText = l10n_dupstr(text);
+    ins.INSITEM.cchTextMax = strlen(ins.INSITEM.pszText)+1;
     ins.INSITEM.lParam = (LPARAM)path;
     newitem = TreeView_InsertItem(faff->treeview, &ins);
+    sfree (ins.INSITEM.pszText);
     if (level > 0)
         TreeView_Expand(faff->treeview, faff->lastat[level - 1],
-                        (level > 1 ? TVE_COLLAPSE : TVE_EXPAND));
+                        (level > 1 && strncmp(path, "Connection/SSH", 14) ? TVE_COLLAPSE : TVE_EXPAND));
     faff->lastat[level] = newitem;
     for (i = level + 1; i < 4; i++)
         faff->lastat[i] = NULL;
@@ -520,6 +526,7 @@ static INT_PTR GenericMainDlgProc(HWND hwnd, UINT msg, WPARAM wParam,
 {
     PortableDialogStuff *pds = (PortableDialogStuff *)ctx;
     const int DEMO_SCREENSHOT_TIMER_ID = 1230;
+    const int PANEL_CHANGED_TIMER_ID = 1231;
     HWND treeview;
     struct treeview_faff tvfaff;
 
@@ -527,7 +534,7 @@ static INT_PTR GenericMainDlgProc(HWND hwnd, UINT msg, WPARAM wParam,
       case WM_INITDIALOG:
         pds_initdialog_start(pds, hwnd);
 
-        pds_create_controls(pds, TREE_BASE, IDCX_STDBASE, 3, 3, 235, "");
+        pds_create_controls(pds, TREE_BASE, IDCX_STDBASE, 3, 3, 235+24+15, "");
 
         SendMessage(hwnd, WM_SETICON, (WPARAM) ICON_BIG,
                     (LPARAM) LoadIcon(hinst, MAKEINTRESOURCE(IDI_CFGICON)));
@@ -559,7 +566,7 @@ static INT_PTR GenericMainDlgProc(HWND hwnd, UINT msg, WPARAM wParam,
             r.left = 3;
             r.right = r.left + 95;
             r.top = 13;
-            r.bottom = r.top + 219;
+            r.bottom = r.top + 235+24-1;
             MapDialogRect(hwnd, &r);
             treeview = CreateWindowEx(WS_EX_CLIENTEDGE, WC_TREEVIEW, "",
                                       WS_CHILD | WS_VISIBLE |
@@ -643,6 +650,7 @@ static INT_PTR GenericMainDlgProc(HWND hwnd, UINT msg, WPARAM wParam,
         if (dialog_box_demo_screenshot_filename)
             SetTimer(hwnd, DEMO_SCREENSHOT_TIMER_ID, TICKSPERSEC, NULL);
 
+        l10n_created_window(hwnd);
         pds_initdialog_finish(pds);
         return 0;
 
@@ -658,27 +666,16 @@ static INT_PTR GenericMainDlgProc(HWND hwnd, UINT msg, WPARAM wParam,
                 sfree(err);
             }
             ShinyEndDialog(hwnd, 0);
-        }
-        return 0;
+        } else if (wParam == PANEL_CHANGED_TIMER_ID) {
+            KillTimer(hwnd, PANEL_CHANGED_TIMER_ID);
+            treeview = GetDlgItem(hwnd, IDCX_TREEVIEW);
+            if (!treeview) return 0;
 
-      case WM_NOTIFY:
-        if (LOWORD(wParam) == IDCX_TREEVIEW &&
-            ((LPNMHDR) lParam)->code == TVN_SELCHANGED) {
-            /*
-             * Selection-change events on the treeview cause us to do
-             * a flurry of control deletion and creation - but only
-             * after WM_INITDIALOG has finished. The initial
-             * selection-change event(s) during treeview setup are
-             * ignored.
-             */
             HTREEITEM i;
             TVITEM item;
             char buffer[64];
 
-            if (!pds->initialised)
-                return 0;
-
-            i = TreeView_GetSelection(((LPNMHDR) lParam)->hwndFrom);
+            i = TreeView_GetSelection(treeview);
 
             SendMessage (hwnd, WM_SETREDRAW, false, 0);
 
@@ -686,7 +683,7 @@ static INT_PTR GenericMainDlgProc(HWND hwnd, UINT msg, WPARAM wParam,
             item.pszText = buffer;
             item.cchTextMax = sizeof(buffer);
             item.mask = TVIF_TEXT | TVIF_PARAM;
-            TreeView_GetItem(((LPNMHDR) lParam)->hwndFrom, &item);
+            TreeView_GetItem(treeview, &item);
             {
                 /* Destroy all controls in the currently visible panel. */
                 int k;
@@ -702,8 +699,7 @@ static INT_PTR GenericMainDlgProc(HWND hwnd, UINT msg, WPARAM wParam,
                     }
                     winctrl_rem_shortcuts(pds->dp, c);
                     winctrl_remove(&pds->ctrltrees[TREE_PANEL], c);
-                    sfree(c->data);
-                    sfree(c);
+                    winctrl_free(c);
                 }
             }
             pds_create_controls(pds, TREE_PANEL, IDCX_PANELBASE,
@@ -712,9 +708,33 @@ static INT_PTR GenericMainDlgProc(HWND hwnd, UINT msg, WPARAM wParam,
             dlg_refresh(NULL, pds->dp);    /* set up control values */
 
             SendMessage (hwnd, WM_SETREDRAW, true, 0);
-            InvalidateRect (hwnd, NULL, true);
+            // invalidate right panel area.
+            RECT wr, cr[2];
+            GetClientRect(hwnd, &wr);
+            GetWindowRect(treeview, &cr[0]);
+            GetWindowRect(GetDlgItem(hwnd, IDCX_STDBASE), &cr[1]);
+            MapWindowPoints(NULL, hwnd, (POINT *)cr, 4);
+            wr.left = cr[0].right + 1;
+            wr.bottom = cr[1].top;
+            InvalidateRect(hwnd, &wr, true);
 
-            SetFocus(((LPNMHDR) lParam)->hwndFrom);     /* ensure focus stays */
+            SetFocus(treeview);     /* ensure focus stays */
+        }
+        return 0;
+
+      case WM_NOTIFY:
+        if (LOWORD(wParam) == IDCX_TREEVIEW &&
+            ((LPNMHDR) lParam)->code == TVN_SELCHANGED) {
+            /*
+             * Selection-change events on the treeview cause us to do
+             * a flurry of control deletion and creation - but only
+             * after WM_INITDIALOG has finished. The initial
+             * selection-change event(s) during treeview setup are
+             * ignored.
+             */
+            if (!pds->initialised)
+                return 0;
+            SetTimer(hwnd, PANEL_CHANGED_TIMER_ID, 10, NULL);
         }
         return 0;
 
@@ -792,13 +812,14 @@ bool do_reconfig(HWND hwnd, Conf *conf, int protcfginfo)
 
     pds->dp->wintitle = dupprintf("%s Reconfiguration", appname);
     pds->dp->data = conf;
+    pds->dp->term_hwnd = hwnd;
 
     dlg_auto_set_fixed_pitch_flag(pds->dp);
 
     pds->dp->shortcuts['g'] = true;          /* the treeview: `Cate&gory' */
 
     ret = ShinyDialogBox(hinst, MAKEINTRESOURCE(IDD_MAINBOX), "PuTTYConfigBox",
-                         NULL, GenericMainDlgProc, pds);
+                         hwnd, GenericMainDlgProc, pds);
 
     pds_free(pds);
 
@@ -862,6 +883,7 @@ void showeventlog(HWND hwnd)
     if (!logbox) {
         logbox = CreateDialog(hinst, MAKEINTRESOURCE(IDD_LOGBOX),
                               hwnd, LogProc);
+        l10n_created_window(logbox);
         ShowWindow(logbox, SW_SHOWNORMAL);
     }
     SetActiveWindow(logbox);
@@ -1065,6 +1087,7 @@ static INT_PTR HostKeyDialogProc(HWND hwnd, UINT msg,
         int height = SendDlgItemMessage(hwnd, IDC_HK_TEXT,
                                         EM_GETLINECOUNT, 0, 0);
         height *= 8; /* height of a text line, by definition of dialog units */
+        height += 2;
 
         int edittop = ctx->has_title ? 40 : 20;
 
@@ -1081,9 +1104,9 @@ static INT_PTR HostKeyDialogProc(HWND hwnd, UINT msg,
         static const struct {
             int id, x;
         } buttons[] = {
-            { IDCANCEL, 288 },
-            { IDC_HK_ACCEPT, 168 },
-            { IDC_HK_ONCE, 216 },
+            { IDCANCEL, 268 },
+            { IDC_HK_ACCEPT, 135 },
+            { IDC_HK_ONCE, 200 },
             { IDC_HK_MOREINFO, 60 },
             { IDHELP, 12 },
         };

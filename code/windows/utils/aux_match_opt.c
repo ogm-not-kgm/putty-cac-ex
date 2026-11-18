@@ -9,6 +9,7 @@
  */
 
 #include "putty.h"
+#include "windows/ini.h"
 
 /*
  * Call this to initialise the state structure.

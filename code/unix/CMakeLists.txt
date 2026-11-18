@@ -19,6 +19,7 @@ add_sources_from_current_dir(utils
   utils/pgp_fingerprints.c
   utils/pollwrap.c
   utils/signal.c
+  utils/sleep_ticks.c
   utils/subprocess_waiter.c
   utils/x11_ignore_error.c
   # We want the ISO C implementation of ltime(), because we don't have
@@ -144,6 +145,7 @@ if(GTK_FOUND)
     utils/string_width.c
     columns.c)
   add_sources_from_current_dir(guiterminal
+    uxl10n.c
     window.c unifont.c dialog.c config-gtk.c gtk-common.c config-unix.c unicode.c printing.c)
   add_dependencies(guiterminal generated_licence_h) # dialog.c uses licence.h
 

@@ -16,6 +16,7 @@ add_sources_from_current_dir(utils
   utils/filename.c
   utils/fontspec.c
   utils/getdlgitemtext_alloc.c
+  utils/get_module_filename.c
   utils/get_system_dir.c
   utils/get_username.c
   utils/gui-timing.c
@@ -40,6 +41,10 @@ add_sources_from_current_dir(utils
   utils/subprocess_waiter.c
   utils/version.c
   utils/win_strerror.c
+  utils/app_conf.c
+  utils/sleep_ticks.c
+  winl10n.c
+# winl10n must be used for CLI too. nol10n.c cannot query connection sharing with text translation.
   unicode.c)
 if(NOT HAVE_STRTOUMAX)
   add_sources_from_current_dir(utils utils/strtoumax.c)
@@ -49,6 +54,7 @@ add_sources_from_current_dir(eventloop
 add_sources_from_current_dir(console
   select-cli.c nohelp.c console.c)
 add_sources_from_current_dir(settings
+  ini.c
   storage.c)
 add_sources_from_current_dir(network
   network.c handle-socket.c named-pipe-client.c named-pipe-server.c local-proxy.c x11.c)
@@ -63,6 +69,7 @@ add_sources_from_current_dir(otherbackends
 add_sources_from_current_dir(agent
   agent-client.c)
 add_sources_from_current_dir(guiterminal
+  winwallp.c wtrans.c
   dialog.c controls.c config.c printing.c jump-list.c sizetip.c)
 add_dependencies(guiterminal generated_licence_h) # dialog.c uses licence.h
 
@@ -80,6 +87,8 @@ add_library(guimisc STATIC
 add_executable(pageant
   pageant.c
   help.c
+  ini.c
+  ${CMAKE_SOURCE_DIR}/stubs/no-iso2022.c
   pageant.rc)
 add_dependencies(pageant generated_licence_h)
 target_link_libraries(pageant
@@ -99,8 +108,13 @@ add_dependencies(psftp generated_licence_h)
 
 add_sources_from_current_dir(psocks nohelp.c)
 
+add_library(tsf OBJECT
+  tsf.cpp)
+target_compile_features(tsf PRIVATE cxx_std_20)
+
 add_executable(putty
   window.c
+  $<TARGET_OBJECTS:tsf>
   putty.c
   help.c
   ${CMAKE_SOURCE_DIR}/stubs/no-console.c
@@ -110,12 +124,16 @@ add_dependencies(putty generated_licence_h)
 target_link_libraries(putty
   guiterminal guimisc eventloop sshclient otherbackends settings network crypto
   utils
+  iso2022
   ${platform_libraries})
 set_target_properties(putty PROPERTIES WIN32_EXECUTABLE ON)
 installed_program(putty)
 
+target_compile_definitions(putty PRIVATE PUTTY_WITH_SSH)
+
 add_executable(puttytel
   window.c
+  $<TARGET_OBJECTS:tsf>
   putty.c
   help.c
   ${CMAKE_SOURCE_DIR}/stubs/no-gss.c
@@ -130,6 +148,7 @@ be_list(puttytel PuTTYtel SERIAL OTHERBACKENDS)
 add_dependencies(puttytel generated_licence_h)
 target_link_libraries(puttytel
   guiterminal guimisc eventloop otherbackends settings network utils
+  iso2022
   ${platform_libraries})
 set_target_properties(puttytel PROPERTIES WIN32_EXECUTABLE ON)
 installed_program(puttytel)
@@ -139,11 +158,13 @@ add_executable(puttygen
   ${CMAKE_SOURCE_DIR}/stubs/no-timing.c
   noise.c
   no-jump-list.c
+  ini.c
   storage.c
   help.c
   ${CMAKE_SOURCE_DIR}/sshpubk.c
   ${CMAKE_SOURCE_DIR}/sshrand.c
   controls.c
+  ${CMAKE_SOURCE_DIR}/stubs/no-iso2022.c
   puttygen.rc)
 add_dependencies(puttygen generated_licence_h)
 target_link_libraries(puttygen
@@ -155,6 +176,7 @@ installed_program(puttygen)
 if(HAVE_CONPTY)
   add_executable(pterm
     window.c
+    $<TARGET_OBJECTS:tsf>
     pterm.c
     help.c
     conpty.c
@@ -169,6 +191,7 @@ if(HAVE_CONPTY)
   add_dependencies(pterm generated_licence_h)
   target_link_libraries(pterm
     guiterminal guimisc eventloop settings network utils
+    iso2022
     ${platform_libraries})
   set_target_properties(pterm PROPERTIES WIN32_EXECUTABLE ON)
   installed_program(pterm)
@@ -177,23 +200,29 @@ else()
 endif()
 
 add_executable(test_split_into_argv
+  ${CMAKE_SOURCE_DIR}/stubs/nol10n.c
+  ${CMAKE_SOURCE_DIR}/utils/dupprintf.c
   test/test_split_into_argv.c)
 target_compile_definitions(test_split_into_argv PRIVATE TEST)
 target_link_libraries(test_split_into_argv utils ${platform_libraries})
 
 add_executable(test_screenshot
+  ${CMAKE_SOURCE_DIR}/stubs/no-ini.c
+  ${CMAKE_SOURCE_DIR}/stubs/no-iso2022.c
   test/test_screenshot.c)
 target_link_libraries(test_screenshot utils ${platform_libraries})
 
 add_executable(test_lineedit
   ${CMAKE_SOURCE_DIR}/test/test_lineedit.c
   ${CMAKE_SOURCE_DIR}/stubs/no-gss.c
+  ${CMAKE_SOURCE_DIR}/stubs/no-ini.c
   ${CMAKE_SOURCE_DIR}/stubs/no-logging.c
   ${CMAKE_SOURCE_DIR}/stubs/no-printing.c
   ${CMAKE_SOURCE_DIR}/stubs/no-storage.c
   ${CMAKE_SOURCE_DIR}/stubs/no-timing.c
   no-jump-list.c)
 target_link_libraries(test_lineedit
+  iso2022
   guiterminal settings eventloop utils ${platform_libraries})
 
 add_executable(test_terminal
@@ -203,9 +232,12 @@ add_executable(test_terminal
   ${CMAKE_SOURCE_DIR}/stubs/no-timing.c
   no-jump-list.c)
 target_link_libraries(test_terminal
+  iso2022
   guiterminal settings eventloop utils ${platform_libraries})
 
-add_sources_from_current_dir(test_conf no-jump-list.c handle-wait.c)
+add_sources_from_current_dir(test_conf
+  ../stubs/no-iso2022.c
+  no-jump-list.c handle-wait.c)
 
 if(PUTTY_CAC)
 target_link_libraries(puttytel crypto utils network sshclient)

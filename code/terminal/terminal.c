@@ -55,6 +55,8 @@
 
 #define has_compat(x) ( ((CL_##x)&term->compatibility_level) != 0 )
 
+#define TERMINAL_LOAD_ISO2022(term) ((in_utf(term) && term->ucsdata->iso2022) ? &term->ucsdata->iso2022_data : NULL)
+
 static const char *const EMPTY_WINDOW_TITLE = "";
 
 static const char sco2ansicolour[] = { 0, 4, 2, 6, 1, 5, 3, 7 };
@@ -1422,6 +1424,9 @@ static void term_schedule_vbell(Terminal *term, bool already_started,
  */
 static void power_on(Terminal *term, bool clear)
 {
+    if (in_utf (term))
+        term->ucsdata->iso2022 = !iso2022_init (&term->ucsdata->iso2022_data,
+                                                conf_get_str(term->conf, CONF_line_codepage), 0);
     term->alt_x = term->alt_y = 0;
     term->savecurs.x = term->savecurs.y = 0;
     term->alt_savecurs.x = term->alt_savecurs.y = 0;
@@ -1659,7 +1664,7 @@ static void term_copy_stuff_from_conf(Terminal *term)
     term->no_alt_screen = conf_get_bool(term->conf, CONF_no_alt_screen);
     term->no_applic_c = conf_get_bool(term->conf, CONF_no_applic_c);
     term->no_applic_k = conf_get_bool(term->conf, CONF_no_applic_k);
-    term->no_dbackspace = conf_get_bool(term->conf, CONF_no_dbackspace);
+    term->no_dbackspace = conf_get_int(term->conf, CONF_no_dbackspace);
     term->no_mouse_rep = conf_get_bool(term->conf, CONF_no_mouse_rep);
     term->no_remote_charset = conf_get_bool(term->conf, CONF_no_remote_charset);
     term->no_remote_resize = conf_get_bool(term->conf, CONF_no_remote_resize);
@@ -3293,10 +3298,13 @@ static void term_print_finish(Terminal *term)
 
 static void term_display_graphic_char(Terminal *term, unsigned long c)
 {
+    struct iso2022_data *iso2022 = TERMINAL_LOAD_ISO2022(term);
     termline *cline = scrlineptr(term->curs.y);
     int width = 0;
     if (DIRECT_CHAR(c))
         width = 1;
+    if (iso2022)
+        width = iso2022_width (iso2022, c);
     if (!width)
         width = term_char_width(term, c);
 
@@ -3317,6 +3325,12 @@ static void term_display_graphic_char(Terminal *term, unsigned long c)
         incpos(cursplus);
         check_selection(term, term->curs, cursplus);
     }
+    if (term->logtype == LGTYP_ASCII && iso2022 && term->logctx
+            && 0x9f < c && c <= 0x10ffff
+            && term->utf8.chr == (int)c) {
+        // output non-ASCII characters in UTF-8 encoding
+        logtraffic_utf8(term->logctx, c);
+    } else
     if (((c & CSET_MASK) == CSET_ASCII ||
          (c & CSET_MASK) == 0) && term->logctx)
         logtraffic(term->logctx, (unsigned char) c, LGTYP_ASCII);
@@ -3569,8 +3583,15 @@ static inline void term_keyinput_internal(
     }
     if (interactive)
         term_bracketed_paste_stop(term);
-    if (term->ldisc)
+    if (term->ldisc) {
+        if (in_utf(term) && term->ucsdata->iso2022) {
+            iso2022_settranschar(&term->ucsdata->iso2022_data, 1);
+        }
         ldisc_send(term->ldisc, buf, len, interactive);
+        if (in_utf(term) && term->ucsdata->iso2022) {
+            iso2022_settranschar(&term->ucsdata->iso2022_data, 0);
+        }
+    }
     term_seen_key_event(term);
 }
 
@@ -3578,6 +3599,7 @@ unsigned long term_translate(
     Terminal *term, struct term_utf8_decode *utf8, unsigned char c)
 {
     if (in_utf(term)) {
+        struct iso2022_data *iso2022 = TERMINAL_LOAD_ISO2022(term);
         switch (utf8->state) {
           case 0:
             if (c < 0x80) {
@@ -3645,6 +3667,7 @@ unsigned long term_translate(
             /* The UTF-16 surrogates are not nice either. */
             /*       The standard give the option of decoding these:
              *       I don't want to! */
+            if (!iso2022) /* for VT100 graphics */
             if (t >= 0xD800 && t < 0xE000)
                 return UCSINVALID;
 
@@ -3715,6 +3738,7 @@ static void term_out(Terminal *term, bool called_from_term_data)
     int unget;
     const unsigned char *chars;
     size_t nchars_got = 0, nchars_used = 0;
+    struct iso2022_data *iso2022 = TERMINAL_LOAD_ISO2022(term);
 
     /*
      * During drag-selects, we do not process terminal input, because
@@ -3728,7 +3752,8 @@ static void term_out(Terminal *term, bool called_from_term_data)
     chars = NULL;                      /* placate compiler warnings */
     while (nchars_got < nchars_used ||
            unget != -1 ||
-           bufchain_size(&term->inbuf) > 0) {
+           bufchain_size(&term->inbuf) > 0 ||
+           (iso2022 && iso2022_buflen(iso2022) > 0)) {
         if (unget != -1) {
             /*
              * Handle a character we left in 'unget' the last time
@@ -3764,6 +3789,9 @@ static void term_out(Terminal *term, bool called_from_term_data)
             if (term->win_resize_pending != WIN_RESIZE_NO)
                 break;
 
+            if (iso2022 && term->termstate == TOPLEVEL)
+                iso2022_clearesc(iso2022);
+            if (!iso2022 || !iso2022_buflen(iso2022)) { /* iso2022: notice no indent */
             if (nchars_got == nchars_used) {
                 /* Delete the previous chunk from the bufchain */
                 bufchain_consume(&term->inbuf, nchars_used);
@@ -3775,6 +3803,8 @@ static void term_out(Terminal *term, bool called_from_term_data)
                 ptrlen data = bufchain_prefix(&term->inbuf);
                 chars = data.ptr;
                 nchars_got = data.len;
+                if (iso2022)
+                    iso2022_autodetect_put(iso2022, chars, nchars_got);
                 assert(chars != NULL);
                 assert(nchars_used < nchars_got);
             }
@@ -3786,6 +3816,14 @@ static void term_out(Terminal *term, bool called_from_term_data)
              */
             if (term->logtype == LGTYP_DEBUG && term->logctx)
                 logtraffic(term->logctx, (unsigned char) c, LGTYP_DEBUG);
+            if (iso2022) iso2022_put(iso2022, c);
+            } /* iso2022: notice no unindent */
+            if (iso2022) {
+                if (iso2022_buflen(iso2022) > 0)
+                    c = iso2022_getbuf(iso2022);
+                else
+                    continue;
+            }
         }
 
         /* Note only VT220+ are 8-bit VT102 is seven bit, it shouldn't even
@@ -3860,7 +3898,7 @@ static void term_out(Terminal *term, bool called_from_term_data)
 
         /* Or the GL control. */
         if (c == '\177' && term->termstate < DO_CTRLS && has_compat(OTHER)) {
-            if (term->curs.x && !term->wrapnext)
+            if (term->no_dbackspace < 2 && term->curs.x && !term->wrapnext)
                 term->curs.x--;
             term->wrapnext = false;
             /* destructive backspace might be disabled */
@@ -6121,20 +6159,33 @@ static void do_paint(Terminal *term)
         }
 
         /* Work out if and where to display pre-edit text. */
-        if (i == our_curs_y && term->preedit_termline != NULL) {
-            preedit_start = our_curs_x;
-            preedit_end = preedit_start + term->preedit_termline->cols;
-            if (preedit_end > term->cols) {
-                preedit_end = term->cols;
-                preedit_start = preedit_end - term->preedit_termline->cols;
+        if (i == our_curs_y && term->preedit_termline != NULL &&
+            term->preedit_termline->cols > 0) {
+            int preedit_cols = term->preedit_termline->cols;
+            if (preedit_cols > term->cols) {
+                preedit_cols = term->cols;
+                if (preedit_cols > 0 && preedit_cols < term->preedit_termline->cols &&
+                    term->preedit_termline->chars[preedit_cols].chr == UCSWIDE) {
+                    preedit_cols--;
+                }
             }
-            /* Show the cursor at the right end of the pre-edit text. */
-            if (term->preedit_termline->chars[term->preedit_termline->cols - 1]
-                .chr == UCSWIDE)
-                our_curs_x = preedit_end - 2;
-            else
-                our_curs_x = preedit_end - 1;
-            cursor |= ATTR_RIGHTCURS;
+            if (preedit_cols > 0) {
+                preedit_start = our_curs_x;
+                preedit_end = preedit_start + preedit_cols;
+                if (preedit_end > term->cols) {
+                    preedit_end = term->cols;
+                    preedit_start = preedit_end - preedit_cols;
+                }
+                if (preedit_start < 0)
+                    preedit_start = 0;
+                /* Show the cursor at the right end of the pre-edit text. */
+                if (preedit_cols >= 2 &&
+                    term->preedit_termline->chars[preedit_cols - 1].chr == UCSWIDE)
+                    our_curs_x = preedit_end - 2;
+                else
+                    our_curs_x = preedit_end - 1;
+                cursor |= ATTR_RIGHTCURS;
+            }
         }
 
         /*
@@ -6185,8 +6236,15 @@ static void do_paint(Terminal *term)
                 break;
             }
             if (j < (in_preedit ? preedit_end : term->cols) - 1
+                && (in_preedit || j + 1 != preedit_start ||
+                    preedit_end <= preedit_start)
                 && d[1].chr == UCSWIDE)
                 tattr |= ATTR_WIDE;
+            if (!in_preedit && preedit_end > preedit_start &&
+                j + 1 == preedit_start && d[1].chr == UCSWIDE) {
+                /* Pre-edit starts on the right half of a wide char: blank the left half. */
+                tchar = term->ucsdata->unitab_line[(unsigned char)' '];
+            }
 
             /* Video reversing things */
             if (term->selstate == DRAGGING || term->selstate == SELECTED) {
@@ -8136,6 +8194,41 @@ void term_notify_window_size_pixels(Terminal *term, int x, int y)
     term->winpixsize_y = y;
 }
 
+static void preedit_append_codepoint(Terminal *term, int *width, unsigned int c,
+                                     unsigned long extra_attr)
+{
+    switch (term_char_width(term, c)) {
+      case -1:
+        /* Ignore control characters. */
+        break;
+      case 0:
+        if (*width == 0) {
+            *width = 1;
+            resizeline(term, term->preedit_termline, *width);
+            term->preedit_termline->chars[0].attr |= extra_attr;
+        }
+        if (term->preedit_termline->chars[*width - 1].chr == UCSWIDE)
+            add_cc(term->preedit_termline, *width - 2, c);
+        else
+            add_cc(term->preedit_termline, *width - 1, c);
+        break;
+      case 1:
+        *width += 1;
+        resizeline(term, term->preedit_termline, *width);
+        term->preedit_termline->chars[*width - 1].chr = c;
+        term->preedit_termline->chars[*width - 1].attr |= extra_attr;
+        break;
+      case 2:
+        *width += 2;
+        resizeline(term, term->preedit_termline, *width);
+        term->preedit_termline->chars[*width - 2].chr = c;
+        term->preedit_termline->chars[*width - 2].attr |= extra_attr;
+        term->preedit_termline->chars[*width - 1].chr = UCSWIDE;
+        term->preedit_termline->chars[*width - 1].attr |= extra_attr;
+        break;
+    }
+}
+
 /*
  * Set the pre-edit text as required by an input method.  preedit_text
  * is expected to be in UTF-8.  It's NULL if no pre-edit text is
@@ -8153,32 +8246,38 @@ void term_set_preedit_text(Terminal *term, char *preedit_text)
         BinarySource_BARE_INIT(src, preedit_text, strlen(preedit_text));
         while (get_avail(src)) {
             unsigned int c = decode_utf8(src, NULL);
-            switch (term_char_width(term, c)) {
-              case -1:
-                /* Ignore control characters. */
-                break;
-              case 0:
-                if (width == 0) {
-                    width = 1;
-                    resizeline(term, term->preedit_termline, width);
-                }
-                if (term->preedit_termline->chars[width - 1].chr == UCSWIDE)
-                    add_cc(term->preedit_termline, width - 2, c);
-                else
-                    add_cc(term->preedit_termline, width - 1, c);
-                break;
-              case 1:
-                width += 1;
-                resizeline(term, term->preedit_termline, width);
-                term->preedit_termline->chars[width - 1].chr = c;
-                break;
-              case 2:
-                width += 2;
-                resizeline(term, term->preedit_termline, width);
-                term->preedit_termline->chars[width - 2].chr = c;
-                term->preedit_termline->chars[width - 1].chr = UCSWIDE;
-                break;
+            preedit_append_codepoint(term, &width, c, 0);
+        }
+    }
+    seen_disp_event(term);
+}
+
+void term_set_preedit_text_w(Terminal *term, const wchar_t *text,
+                             const uint8_t *styles, int len)
+{
+    freetermline(term->preedit_termline);
+    term->preedit_termline = NULL;
+    if (text != NULL && len > 0) {
+        int width = 0;
+        term->preedit_termline = newtermline(term, 0, false);
+        for (int i = 0; i < len; i++) {
+            uint8_t st = styles ? styles[i] : 1;
+            unsigned long extra_attr = 0;
+            if (st == 1)
+                extra_attr = ATTR_PREEDIT_DOT;
+            else if (st == 2)
+                extra_attr = ATTR_PREEDIT_SOLID;
+            else if (st == 3)
+                extra_attr = ATTR_PREEDIT_TARGET;
+
+            unsigned int c = (unsigned int)text[i];
+            if (IS_HIGH_SURROGATE(text[i]) && i + 1 < len &&
+                IS_LOW_SURROGATE(text[i + 1])) {
+                c = 0x10000U + (((unsigned int)(text[i] - 0xD800) << 10) |
+                                (unsigned int)(text[i + 1] - 0xDC00));
+                i++;
             }
+            preedit_append_codepoint(term, &width, c, extra_attr);
         }
     }
     seen_disp_event(term);

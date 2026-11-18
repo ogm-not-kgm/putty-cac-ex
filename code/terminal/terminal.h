@@ -333,7 +333,7 @@ struct terminal_tag {
     bool no_alt_screen;
     bool no_applic_c;
     bool no_applic_k;
-    bool no_dbackspace;
+    int no_dbackspace;
     bool no_mouse_rep;
     bool no_remote_charset;
     bool no_remote_resize;

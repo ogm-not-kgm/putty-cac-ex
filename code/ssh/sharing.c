@@ -149,6 +149,7 @@ struct ssh_sharing_state {
     char *server_verstring;          /* server version string after "SSH-" */
 
     Plug plug;
+    bool ask;
 };
 
 struct share_globreq;
@@ -1911,6 +1912,10 @@ static int share_listen_accepting(Plug *plug,
     const char *err;
     SocketEndpointInfo *peerinfo;
 
+    if (sharestate->ask && !platform_ssh_share_ask(sharestate->sockname)) {
+        return 1;
+    }
+
     /*
      * A new downstream has connected to us.
      */
@@ -2089,6 +2094,7 @@ Socket *ssh_connection_sharing_init(
     sharestate = snew(struct ssh_sharing_state);
     sharestate->plug.vt = &ssh_sharing_listen_plugvt;
     sharestate->listensock = NULL;
+    sharestate->ask = conf_get_bool(conf, CONF_ssh_connection_sharing_ask);
     sharestate->cl = NULL;
 
     /*

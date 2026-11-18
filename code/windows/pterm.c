@@ -1,4 +1,5 @@
 #include "putty.h"
+#include "ini.h"
 #include "storage.h"
 
 const unsigned cmdline_tooltype =
@@ -7,6 +8,7 @@ const unsigned cmdline_tooltype =
 
 void gui_term_process_cmdline(Conf *conf, char *cmdline)
 {
+    process_ini_option(cmdline_error);
     do_defaults(NULL, conf);
     conf_set_str(conf, CONF_remote_cmd, "");
 
