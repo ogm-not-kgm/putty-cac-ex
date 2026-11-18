@@ -4260,24 +4260,21 @@ static void do_text_internal(
     //
 
     /* Hyperlink */
-    {
-        POINT pt;
-        int ms_x;
-        int ms_y;
-
-        GetCursorPos(&pt);
-        ScreenToClient(wgs->term_hwnd, &pt);
-        ms_x = TO_CHR_X(pt.x);
-        ms_y = TO_CHR_Y(pt.y);
-
-        if ((attr & TATTR_URLMASK) &&
-            ((url_underline == URL_UNDERLINE_ALWAYS) ||
-             ((url_underline == URL_UNDERLINE_HOVER) &&
-              (ms_x >= 0) && (ms_x < wgs->term->cols) &&
-              (ms_y >= 0) && (ms_y < wgs->term->rows) &&
-              ((wgs->term->disptext[ms_y]->chars[ms_x].attr & TATTR_URLMASK) ==
-               (attr & TATTR_URLMASK))))) {
-          attr |= ATTR_UNDER;
+    if (attr & TATTR_URLMASK) {
+        if (url_underline == URL_UNDERLINE_ALWAYS) {
+            attr |= ATTR_UNDER;
+        } else if (url_underline == URL_UNDERLINE_HOVER) {
+            POINT pt;
+            GetCursorPos(&pt);
+            ScreenToClient(wgs->term_hwnd, &pt);
+            int ms_x = TO_CHR_X(pt.x);
+            int ms_y = TO_CHR_Y(pt.y);
+            if ((ms_x >= 0) && (ms_x < wgs->term->cols) &&
+                (ms_y >= 0) && (ms_y < wgs->term->rows) &&
+                ((wgs->term->disptext[ms_y]->chars[ms_x].attr & TATTR_URLMASK) ==
+                 (attr & TATTR_URLMASK))) {
+                attr |= ATTR_UNDER;
+            }
         }
     }
 

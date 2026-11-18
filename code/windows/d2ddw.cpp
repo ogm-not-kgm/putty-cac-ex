@@ -69,13 +69,16 @@ IDWriteFactory4 *dwF4 = NULL;
 ID2D1StrokeStyle *d2dSS = NULL;
 
 ID2D1HwndRenderTarget *d2dRT = NULL;
+ID2D1DeviceContext *d2dRTDC = NULL;
 ID2D1BitmapRenderTarget *d2dBRT = NULL;
 ID2D1DeviceContext4 *d2dDC4 = NULL;
 IDWriteRenderingParams *d2d_text_params = NULL;
 bool d2d_need_full_clear = true;
+bool d2d_cleared_in_frame = false;
 ID2D1SolidColorBrush *d2dSCBfg = NULL;
 ID2D1SolidColorBrush *d2dSCBbg = NULL;
 ID2D1SolidColorBrush *d2dSCBc = NULL;
+ID2D1SolidColorBrush *d2dSCBcol = NULL;
 
 ID2D1Bitmap *d2dICON = NULL;
 
@@ -285,6 +288,10 @@ void d2d_init(WinGuiSeat *wgs) {
   d2dRT->CreateSolidColorBrush(
       D2D1::ColorF(0.0f, 0.0f, 0.0f, alphas[ALPHA_CURSOR][BG_ACTIVE]),
       &d2dSCBc);
+  d2dRT->CreateSolidColorBrush(
+      D2D1::ColorF(0.0f, 0.0f, 0.0f, 1.0f),
+      &d2dSCBcol);
+  d2dRT->QueryInterface(reinterpret_cast<ID2D1DeviceContext **>(&d2dRTDC));
 
   d2d_init_brt(wgs);
 
@@ -307,6 +314,10 @@ void d2d_deinit() {
     d2d_text_params->Release();
     d2d_text_params = NULL;
   }
+  if (d2dRTDC) {
+    d2dRTDC->Release();
+    d2dRTDC = NULL;
+  }
   if (d2dRT) {
     d2dRT->Release();
     d2dRT = NULL;
@@ -323,7 +334,12 @@ void d2d_deinit() {
     d2dSCBc->Release();
     d2dSCBc = NULL;
   }
+  if (d2dSCBcol) {
+    d2dSCBcol->Release();
+    d2dSCBcol = NULL;
+  }
   d2d_need_full_clear = true;
+  d2d_cleared_in_frame = false;
 }
 
 bool d2d_begin(WinGuiSeat *wgs) {
@@ -338,6 +354,7 @@ bool d2d_begin(WinGuiSeat *wgs) {
     // TODO: define err code.
     return false;
   }
+  d2d_cleared_in_frame = false;
   d2dBRT->BeginDraw();
   return true;
 }
@@ -357,11 +374,18 @@ void d2d_present(WinGuiSeat *wgs) {
   }
 
   d2dRT->BeginDraw();
-  d2dRT->Clear(D2D1::ColorF(0.0f, 0.0f, 0.0f, 0.0f));
   D2D1_SIZE_F sz = brtBitmap->GetSize();
   D2D1_RECT_F dst = D2D1::RectF(0.0f, 0.0f, sz.width, sz.height);
-  d2dRT->DrawBitmap(brtBitmap, &dst, 1.0f,
-                    D2D1_BITMAP_INTERPOLATION_MODE_NEAREST_NEIGHBOR);
+  if (d2dRTDC) {
+    d2dRTDC->SetPrimitiveBlend(D2D1_PRIMITIVE_BLEND_COPY);
+    d2dRTDC->DrawBitmap(brtBitmap, &dst, 1.0f,
+                        D2D1_BITMAP_INTERPOLATION_MODE_NEAREST_NEIGHBOR);
+    d2dRTDC->SetPrimitiveBlend(D2D1_PRIMITIVE_BLEND_SOURCE_OVER);
+  } else {
+    d2dRT->Clear(D2D1::ColorF(0.0f, 0.0f, 0.0f, 0.0f));
+    d2dRT->DrawBitmap(brtBitmap, &dst, 1.0f,
+                      D2D1_BITMAP_INTERPOLATION_MODE_NEAREST_NEIGHBOR);
+  }
   HRESULT hr = d2dRT->EndDraw();
   brtBitmap->Release();
 
@@ -372,6 +396,7 @@ void d2d_present(WinGuiSeat *wgs) {
 }
 
 void d2d_end(WinGuiSeat *wgs) {
+  d2d_cleared_in_frame = false;
   if (!d2dBRT) {
     return;
   }
@@ -409,6 +434,7 @@ void d2d_clear(WinGuiSeat *wgs) {
 
   wp_draw_impl(wgs, d2dBRT, &rect, true);
   d2d_need_full_clear = false;
+  d2d_cleared_in_frame = true;
 }
 
 void d2d_resize(WinGuiSeat *wgs) {
@@ -432,7 +458,10 @@ void d2d_resize(WinGuiSeat *wgs) {
 
   // came from bg_resize()
   bg_glass(wgs);
-  wp_create(wgs);
+  if (bg_wallpaper == BG_FILE ||
+      (bg_wallpaper == BG_FILE_DESKTOP && !d2dBB)) {
+    wp_create(wgs);
+  }
   d2d_init_brt(wgs);
 }
 
@@ -552,9 +581,15 @@ void dw_init(WinGuiSeat *wgs, int size) {
     }
   }
 
-  DWRITE_FONT_METRICS fm;
-  dwFF[FF_NORMAL][FF_NORMAL]->GetGdiCompatibleMetrics((FLOAT)font_size,
-                                                      pixelsPerDip, NULL, &fm);
+  DWRITE_FONT_METRICS fm = {};
+  if (dwFF[FF_NORMAL][FF_NORMAL]) {
+    dwFF[FF_NORMAL][FF_NORMAL]->GetMetrics(&fm);
+  }
+  if (fm.designUnitsPerEm == 0) {
+    fm.designUnitsPerEm = 1000;
+    fm.ascent = 800;
+    fm.descent = 200;
+  }
   font_ascent =
       INT((FLOAT(fm.ascent * font_size) / fm.designUnitsPerEm) + 0.5f);
   font_descent =
@@ -700,12 +735,13 @@ static void dw_fontface(WinGuiSeat *wgs, const WCHAR *name, int charset,
 }
 
 static FLOAT dw_getwidth(UINT16 index, IDWriteFontFace *fontface, BOOL segoeuiemoji) {
-  DWRITE_MATRIX dm = {1, 0, 0, 1, 0, 0};
-  DWRITE_FONT_METRICS fm;
-  fontface->GetGdiCompatibleMetrics((FLOAT)font_size, pixelsPerDip, NULL, &fm);
-  DWRITE_GLYPH_METRICS gm;
-  fontface->GetGdiCompatibleGlyphMetrics((FLOAT)font_size, pixelsPerDip, &dm,
-                                         TRUE, &index, 1, &gm, FALSE);
+  DWRITE_FONT_METRICS fm = {};
+  fontface->GetMetrics(&fm);
+  DWRITE_GLYPH_METRICS gm = {};
+  if (FAILED(fontface->GetDesignGlyphMetrics(&index, 1, &gm, FALSE)) ||
+      fm.designUnitsPerEm == 0) {
+    return (FLOAT)font_size / 2.0f;
+  }
 
   if (segoeuiemoji) {
     if (!alt_offset) {
@@ -765,14 +801,13 @@ bool dw_measure_cell_for_pt(WinGuiSeat *wgs, int target_pt, int *out_cell_w, int
     return false;
 
   int dpi_y = wgs->dpi_info.cur_dpi.y > 0 ? wgs->dpi_info.cur_dpi.y : 96;
-  FLOAT dip = (FLOAT)dpi_y / 96.0f;
   int pt = dw_clamp_pt(target_pt);
   int em = MulDiv(pt, dpi_y, 72);
   if (em < 1) em = 1;
 
   DWRITE_FONT_METRICS fm = {};
-  if (FAILED(face->GetGdiCompatibleMetrics((FLOAT)em, dip, NULL, &fm)) ||
-      fm.designUnitsPerEm == 0) {
+  face->GetMetrics(&fm);
+  if (fm.designUnitsPerEm == 0) {
     return false;
   }
 
@@ -781,14 +816,12 @@ bool dw_measure_cell_for_pt(WinGuiSeat *wgs, int target_pt, int *out_cell_w, int
   int cell_h = ascent + descent_px + line_gap;
   if (cell_h < 1) cell_h = 1;
 
-  DWRITE_MATRIX dm = {1, 0, 0, 1, 0, 0};
   int max_digit_w = 0;
   for (UINT32 ch = '0'; ch <= '9'; ch++) {
     UINT16 glyphIndex = 0;
     if (SUCCEEDED(face->GetGlyphIndices(&ch, 1, &glyphIndex)) && glyphIndex != 0) {
       DWRITE_GLYPH_METRICS gm = {};
-      if (SUCCEEDED(face->GetGdiCompatibleGlyphMetrics((FLOAT)em, dip, &dm,
-                                                       TRUE, &glyphIndex, 1, &gm, FALSE))) {
+      if (SUCCEEDED(face->GetDesignGlyphMetrics(&glyphIndex, 1, &gm, FALSE))) {
         int iw = (int)((FLOAT)gm.advanceWidth * em / fm.designUnitsPerEm + 0.5f);
         if (iw > max_digit_w) max_digit_w = iw;
       }
@@ -842,9 +875,9 @@ void dw_init_with_metrics(WinGuiSeat *wgs, int pick_width, int pick_height, DwFo
 
   DWRITE_FONT_METRICS fm = {};
   if (dwFF[FF_NORMAL][FF_NORMAL]) {
-    dwFF[FF_NORMAL][FF_NORMAL]->GetGdiCompatibleMetrics((FLOAT)font_size,
-                                                        pixelsPerDip, NULL, &fm);
-  } else {
+    dwFF[FF_NORMAL][FF_NORMAL]->GetMetrics(&fm);
+  }
+  if (fm.designUnitsPerEm == 0) {
     fm.designUnitsPerEm = 1000;
     fm.ascent = 800;
     fm.descent = 200;
@@ -961,14 +994,25 @@ void dw_textout(WinGuiSeat *wgs, int x, int y, UINT opt, const RECT *rc, WCHAR *
   d2dBRT->PushAxisAlignedClip(&clip_r, D2D1_ANTIALIAS_MODE_ALIASED);
 
   if (!(attr & TATTR_COMBINING)) {
-    d2dBRT->Clear(D2D1::ColorF(0.0f, 0.0f, 0.0f, 0.0f));
     if (opt & ETO_OPAQUE) {
-      D2D1_COLOR_F saved_bg = d2dSCBbg->GetColor();
-      wp_draw_impl(wgs, d2dBRT, &clip_r, false);
-      d2dSCBbg->SetColor(saved_bg);
-      d2dBRT->FillRectangle(&clip_r, d2dSCBbg);
-    } else {
-      wp_draw_impl(wgs, d2dBRT, &clip_r, false);
+      FLOAT bg_a = d2dSCBbg->GetColor().a;
+      if (bg_a >= 1.0f || d2d_cleared_in_frame) {
+        d2dBRT->FillRectangle(&clip_r, d2dSCBbg);
+      } else {
+        d2dBRT->Clear(D2D1::ColorF(0.0f, 0.0f, 0.0f, 0.0f));
+        D2D1_COLOR_F saved_bg = d2dSCBbg->GetColor();
+        wp_draw_impl(wgs, d2dBRT, &clip_r, false);
+        d2dSCBbg->SetColor(saved_bg);
+        d2dBRT->FillRectangle(&clip_r, d2dSCBbg);
+      }
+    } else if (!d2d_cleared_in_frame) {
+      if (bg_wallpaper == BG_NONE &&
+          alphas[ALPHA_DEFAULT_BG][bg_active] >= 1.0f) {
+        wp_draw_impl(wgs, d2dBRT, &clip_r, false);
+      } else {
+        d2dBRT->Clear(D2D1::ColorF(0.0f, 0.0f, 0.0f, 0.0f));
+        wp_draw_impl(wgs, d2dBRT, &clip_r, false);
+      }
     }
   }
 
@@ -994,6 +1038,18 @@ void dw_textout(WinGuiSeat *wgs, int x, int y, UINT opt, const RECT *rc, WCHAR *
     } else {
       d2dBRT->DrawLine(p0, p1, d2dSCBfg, 1.0f, d2dSS);
     }
+  }
+
+  bool all_spaces = true;
+  for (UINT k = 0; k < len; k++) {
+    if (str[k] != L' ' && str[k] != L'\x3000') {
+      all_spaces = false;
+      break;
+    }
+  }
+  if (all_spaces) {
+    d2dBRT->PopAxisAlignedClip();
+    return;
   }
   //
   static UINT wlen = 512;
@@ -1077,10 +1133,10 @@ void dw_textout(WinGuiSeat *wgs, int x, int y, UINT opt, const RECT *rc, WCHAR *
           dw_getwidth(index_0, dwFF[face_0][weight], segoeuiemoji);
     }
     width_0 = dw_width[face_0][weight][index_0];
-    large_0 = (width_0 > width);
+    large_0 = (width_0 > (FLOAT)width + 0.5f);
 
-    advances[0] = (large_0) ? width_0 : width;
-    offsets[0].advanceOffset = (segoeuiemoji) ? alt_offset : (large_0) ? 0 : (width - width_0) / 2;
+    advances[0] = (large_0) ? width_0 : (FLOAT)width;
+    offsets[0].advanceOffset = (segoeuiemoji) ? alt_offset : (large_0) ? 0.0f : (width - width_0) / 2.0f;
     offsets[0].ascenderOffset = 0;
 
     //
@@ -1098,14 +1154,14 @@ void dw_textout(WinGuiSeat *wgs, int x, int y, UINT opt, const RECT *rc, WCHAR *
             dw_getwidth(index_i, dwFF[face_i][weight], segoeuiemoji);
       }
       width_i = dw_width[face_i][weight][index_i];
-      large_i = (width_i > width);
+      large_i = (width_i > (FLOAT)width + 0.5f);
 
       if ((!large_0 && large_i) || (large_0 && (width_0 != width_i))) {
         break;
       }
 
-      advances[i] = (large_i) ? width_i : width;
-      offsets[i].advanceOffset = (segoeuiemoji) ? alt_offset : (large_i) ? 0 : (width - width_i) / 2;
+      advances[i] = (large_i) ? width_i : (FLOAT)width;
+      offsets[i].advanceOffset = (segoeuiemoji) ? alt_offset : (large_i) ? 0.0f : (width - width_i) / 2.0f;
       offsets[i].ascenderOffset = 0;
     }
 
@@ -1168,26 +1224,21 @@ void dw_textout(WinGuiSeat *wgs, int x, int y, UINT opt, const RECT *rc, WCHAR *
       if (colorRun->glyphImageFormat & DWRITE_GLYPH_IMAGE_FORMATS_SVG) {
         if (d2dDC4) {
           D2D1_POINT_2F oo = D2D1::Point2F(colorRun->baselineOriginX, colorRun->baselineOriginY);
-          d2dDC4->DrawSvgGlyphRun(oo, &colorRun->glyphRun, NULL, NULL, 0,
+          d2dDC4->DrawSvgGlyphRun(oo, &colorRun->glyphRun, d2dSCBfg, NULL, 0,
                                   DWRITE_MEASURING_MODE_NATURAL);
         }
         continue;
       }
 
-      if (colorRun->glyphImageFormat & DWRITE_GLYPH_IMAGE_FORMATS_TRUETYPE) {
-        ID2D1SolidColorBrush* brush = NULL;
-        if (colorRun->runColor.r != 0.0 ||
-            colorRun->runColor.g != 0.0 ||
-            colorRun->runColor.b != 0.0 ||
-            colorRun->runColor.a != 0.0) {
-          d2dBRT->CreateSolidColorBrush(colorRun->runColor, &brush);
+      if (colorRun->glyphImageFormat &
+          (DWRITE_GLYPH_IMAGE_FORMATS_TRUETYPE | DWRITE_GLYPH_IMAGE_FORMATS_CFF)) {
+        ID2D1SolidColorBrush *brush = d2dSCBfg;
+        if (colorRun->paletteIndex != 0xFFFF && d2dSCBcol) {
+          d2dSCBcol->SetColor(colorRun->runColor);
+          brush = d2dSCBcol;
         }
         D2D1_POINT_2F oo = D2D1::Point2F(colorRun->baselineOriginX, colorRun->baselineOriginY);
-        d2dBRT->DrawGlyphRun(oo, &colorRun->glyphRun, brush ? brush : d2dSCBfg, DWRITE_MEASURING_MODE_NATURAL);
-        if (brush) {
-          brush->Release();
-          brush = NULL;
-        }
+        d2dBRT->DrawGlyphRun(oo, &colorRun->glyphRun, brush, DWRITE_MEASURING_MODE_NATURAL);
         continue;
       }
     }
@@ -1580,6 +1631,9 @@ void bg_glass(WinGuiSeat *wgs) {
   bb.fEnable = TRUE;
   bb.hRgnBlur = hrgn;
   DwmEnableBlurBehindWindow(hwnd, &bb);
+  if (hrgn) {
+    DeleteObject(hrgn);
+  }
 
   MARGINS margins = {0};
   if ((border_style != BS_NORMAL) && (bg_effect != BG_PLANE)) {

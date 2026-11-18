@@ -47,3 +47,14 @@ Integrated `putty-d2ddw/patch/d2ddw.diff` (Direct2D / DirectWrite rendering and 
   - Added `README.ja.md` and `changelog.ja.md`, and updated `README.md` and `changelog.md` in English.
   - Updated `code/LICENCE` with `iceiv` and `Hironori OGUMA`.
   - `code/version.h`: Updated `TEXTVER` to `Release 0.85.3+rv20260820.d2ddw20250211.p1` and `BINARY_VERSION` to `0,85,3,1`, while keeping `SSHVER` as `-Release-0.85-3` (matching upstream PuTTY CAC).
+- **Direct2D / DirectWrite Rendering Pipeline Optimization, Natural Metrics Alignment, & Benchmarks (`0.85.3+rv20260820.d2ddw20261119.p1`)**:
+  - `code/windows/d2ddw.h`: Disabled `D2DBG` (`WriteDebugInfo` synchronous `debug.log` file I/O) by default unless `D2DBG_ENABLE` is defined (guarded with `#ifndef D2DBG`), and fixed `va_list` reuse undefined behavior.
+  - `code/windows/d2ddw.cpp`:
+    - Introduced `ID2D1DeviceContext` (`d2dRTDC`) and optimized `d2d_present()` to copy `brtBitmap` in a single pass with `D2D1_PRIMITIVE_BLEND_COPY` without calling `d2dRT->Clear(0)`.
+    - Added `d2d_cleared_in_frame` tracking to skip redundant per-run clears after full-frame clears and skip unnecessary `Clear(0)` / wallpaper redraws when the background is opaque (`alpha >= 1.0f`); added an early return in `dw_textout()` to skip `GetGlyphs()` / `DrawGlyphRun()` for whitespace-only sub-runs (`L' '` / `L'\x3000'`).
+    - Replaced `GetGdiCompatibleMetrics` and `GetGdiCompatibleGlyphMetrics` with `GetMetrics` and `GetDesignGlyphMetrics` across `dw_init()`, `dw_getwidth()`, `dw_measure_cell_for_pt()`, and `dw_init_with_metrics()` to match `DWRITE_MEASURING_MODE_NATURAL`, and added a `+ 0.5f` rounding tolerance to `large_0` / `large_i` checks to prevent false-positive `SetTransform(Scale)` and per-glyph run splitting.
+    - Reused `d2dSCBcol` via `SetColor()` (with `paletteIndex != 0xFFFF` check) and narrowed `TranslateColorGlyphRun` formats to `DWRITE_GLYPH_IMAGE_FORMATS_TRUETYPE | DWRITE_GLYPH_IMAGE_FORMATS_CFF`.
+    - Fixed an `HRGN` leak in `bg_glass()` and restricted wallpaper regeneration in `d2d_resize()`.
+  - `code/windows/window.c`: Restricted `GetCursorPos()` / `ScreenToClient()` in `do_text_internal()` to runs with `TATTR_URLMASK`.
+  - `benchmark.ja.md`, `benchmark.md`: Added Japanese and English rendering performance benchmark reports comparing `master` (GDI) and `mod-d2ddw` (before and after optimization).
+  - `code/version.h`: Updated `TEXTVER` to `Release 0.85.3+rv20260820.d2ddw20261119.p1` and `BINARY_VERSION` to `0,85,3,2` (keeping `SSHVER` as `-Release-0.85-3`).

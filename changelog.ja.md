@@ -74,3 +74,14 @@
   - `README.ja.md` を新規作成し、`README.md` と合わせて PuTTY CAC Ex（`mod-ranvis` / `mod-d2ddw` ブランチ構成、ライセンス、動作要件、ビルド手順）向けに内容を刷新。
 - **バージョン更新 (`0.85.3+rv20260820.d2ddw20250211.p1`)**:
   - `code/version.h`: `TEXTVER` を `Release 0.85.3+rv20260820.d2ddw20250211.p1`、`BINARY_VERSION` を `0,85,3,1` に更新（`SSHVER` は upstream PuTTY CAC 準拠の `-Release-0.85-3` を維持）。
+- **Direct2D / DirectWrite 描画パイプライン高速化・自然メトリクス統一・ベンチマーク追加 (`0.85.3+rv20260820.d2ddw20261119.p1`)**:
+  - `code/windows/d2ddw.h`: `D2DBG`（`WriteDebugInfo` による `debug.log` への同期ファイル出力）を既定で無効化（`D2DBG_ENABLE` 定義時のみ有効、`#ifndef D2DBG` ガード追加）し、`va_list` 再利用の未定義動作を修正。
+  - `code/windows/d2ddw.cpp`:
+    - `ID2D1DeviceContext`（`d2dRTDC`）を導入し、`d2d_present()` で `d2dRT->Clear(0)` を廃止して `D2D1_PRIMITIVE_BLEND_COPY` による 1 パス転送へ最適化。
+    - `d2d_cleared_in_frame` フラグを導入し、全画面クリア済みフレームでのセル単位二重クリアと、不透明背景（`alpha >= 1.0f`）時の不要な `Clear(0)` / 壁紙再描画を省略。また、空白文字（`L' '` / `L'\x3000'`）のみのサブランでは `GetGlyphs()` / `DrawGlyphRun()` をスキップする早期リターンを追加。
+    - `DWRITE_MEASURING_MODE_NATURAL` 描画と整合するよう、フォント・グリフ計測を `GetGdiCompatibleMetrics` / `GetGdiCompatibleGlyphMetrics` から `GetMetrics` / `GetDesignGlyphMetrics` に統一し、`large_0` / `large_i` 判定に `+ 0.5f` の丸め許容誤差を導入して不要な `SetTransform(Scale)` と 1 文字分割描画を解消。
+    - カラーグリフ描画で `d2dSCBcol` ブラシの `SetColor()` 再利用（`paletteIndex != 0xFFFF` ガード付き）と `DWRITE_GLYPH_IMAGE_FORMATS_TRUETYPE | DWRITE_GLYPH_IMAGE_FORMATS_CFF` 指定へ最適化。
+    - `bg_glass()` の `HRGN` リーク修正、および `d2d_resize()` での壁紙再生成条件の限定を実施。
+  - `code/windows/window.c`: `do_text_internal()` での `GetCursorPos()` / `ScreenToClient()` 呼び出しを `if (attr & TATTR_URLMASK)` 時に限定。
+  - `benchmark.ja.md`, `benchmark.md`: `master`（GDI）と `mod-d2ddw`（最適化前後）の描画パフォーマンス比較ベンチマーク結果を日本語・英語で追加。
+  - `code/version.h`: `TEXTVER` を `Release 0.85.3+rv20260820.d2ddw20261119.p1`、`BINARY_VERSION` を `0,85,3,2` に更新（`SSHVER` は `-Release-0.85-3` を維持）。

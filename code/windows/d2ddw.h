@@ -106,29 +106,36 @@ int dw_char_width(int uc, int font_width);
 
 
 
-#ifndef D2DBG
-#define D2DBG WriteDebugInfo
-//#define D2DBG __noop
-#endif
+#ifdef D2DBG_ENABLE
 static VOID WINAPI WriteDebugInfo(const char *format, ...) {
   static char path[MAX_PATH];
   FILE *fp;
 
   GetCurrentDirectory(MAX_PATH, path);
   strcat(path, "\\debug.log");
-  fp = fopen(path, "a+");
 
   va_list ap;
   va_start(ap, format);
-
   vprintf(format, ap);
+  va_end(ap);
   fflush(NULL);
 
-  vfprintf(fp, format, ap);
-  fclose(fp);
-
-  va_end(ap);
+  fp = fopen(path, "a+");
+  if (fp) {
+    va_list ap2;
+    va_start(ap2, format);
+    vfprintf(fp, format, ap2);
+    va_end(ap2);
+    fclose(fp);
+  }
 }
+#undef D2DBG
+#define D2DBG WriteDebugInfo
+#else
+#ifndef D2DBG
+#define D2DBG(...) ((void)0)
+#endif
+#endif
 
 
 #ifdef __cplusplus
