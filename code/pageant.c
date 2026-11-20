@@ -756,6 +756,7 @@ static void pageant_provider_addop_coroutine(PageantAsyncOp *pao)
         }
 
         if (pageant_add_provider_ssh2_key(key)) {
+            pageant_remember_provider(key->comment, true);
             keylist_update();
             put_byte(response, SSH_AGENT_SUCCESS);
             pageant_client_log(op->pao.info->pc, op->pao.reqid,
@@ -838,12 +839,20 @@ static PageantPublicKey *del_pubkey_pos(int pos)
 
 static void del_pubkey(PageantPublicKey *to_delete)
 {
+#ifdef PUTTY_CAC
+    if (pub_to_priv(to_delete)->provider_backed)
+        pageant_remember_provider(to_delete->comment, false);
+#endif
     PageantPublicKey *deleted = del234(pubkeytree, to_delete);
     remove_pubkey_cleanup(deleted);
 }
 
 static void remove_all_keys(int ssh_version)
 {
+#ifdef PUTTY_CAC
+    if (ssh_version == 2)
+        pageant_remember_provider(NULL, false);
+#endif
     int start = find_first_pubkey_for_version(ssh_version);
     int end = find_first_pubkey_for_version(ssh_version + 1);
     while (end > start) {
@@ -858,7 +867,7 @@ static void list_keys(BinarySink *bs, int ssh_version, bool extended)
     int i;
     PageantPublicKey *pub;
 #ifdef PUTTY_CAC
-    BOOL use_x509 = ssh_version == 2 && cert_auth_x509_enabled(CERT_QUERY);
+    bool use_x509 = ssh_version == 2 && cert_auth_x509_enabled(CERT_QUERY);
 #endif
 
     put_uint32(bs, count_keys(ssh_version));
@@ -902,6 +911,15 @@ static void list_keys(BinarySink *bs, int ssh_version, bool extended)
             if (priv->encrypted_key_file)
                 flags |= LIST_EXTENDED_FLAG_HAS_ENCRYPTED_KEY_FILE;
             put_uint32(sb, flags);
+#ifdef PUTTY_CAC
+            if (use_x509 && pageant_public_blob_is_x509(pageant_listed_public_blob(pub))) {
+                ptrlen raw = pageant_provider_public_blob(pub, false, false);
+                if (!pageant_public_blob_is_x509(raw)) {
+                    PUT_32BIT_MSB_FIRST(sb->u, flags | LIST_EXTENDED_FLAG_RAW_PUBLIC_KEY);
+                    put_stringpl(sb, raw);
+                }
+            }
+#endif
 
             put_stringsb(bs, sb);
         }
@@ -914,6 +932,9 @@ void pageant_make_keylist_extended(BinarySink *bs) { list_keys(bs, 2, true); }
 
 void pageant_register_client(PageantClient *pc)
 {
+#ifdef PUTTY_CAC
+    pc->allow_provider_add = false;
+#endif
     pc->info = snew(PageantClientInfo);
     pc->info->pc = pc;
     pc->info->head.prev = pc->info->head.next = &pc->info->head;
@@ -1685,6 +1706,11 @@ static PageantAsyncOp *pageant_make_op(
                 (!strcmp(IDEN_SPLIT(selector_string), "*") ||
                  !strcmp(IDEN_SPLIT(selector_string), "**"));
             if (is_cert_selector && !dynamic_selector) {
+                if (!pc->allow_provider_add) {
+                    sfree(selector_string);
+                    fail("provider registration requires local management");
+                    goto add2_cleanup;
+                }
                 sfree(key);
                 strbuf_free(sb); /* no immediate response */
 
@@ -2187,6 +2213,12 @@ bool pageant_delete_nth_ssh1_key(int i)
 
 bool pageant_delete_nth_ssh2_key(int i)
 {
+#ifdef PUTTY_CAC
+    PageantPublicKey *selected = pageant_nth_pubkey(2, i);
+    if (!selected) return false;
+    if (pub_to_priv(selected)->provider_backed)
+        pageant_remember_provider(selected->comment, false);
+#endif
     PageantPublicKey *pub = del_pubkey_pos(
         find_first_pubkey_for_version(2) + i);
     if (!pub)
@@ -2534,6 +2566,9 @@ static const PageantClientVtable internal_clientvt = {
 typedef struct PageantClientOp {
     strbuf *buf;
     bool request_made;
+#ifdef PUTTY_CAC
+    bool provider_add;
+#endif
     BinarySink_DELEGATE_IMPLEMENTATION;
     BinarySource_IMPLEMENTATION;
 } PageantClientOp;
@@ -2543,6 +2578,9 @@ static PageantClientOp *pageant_client_op_new(void)
     PageantClientOp *pco = snew(PageantClientOp);
     pco->buf = strbuf_new_for_agent_query();
     pco->request_made = false;
+#ifdef PUTTY_CAC
+    pco->provider_add = false;
+#endif
     BinarySink_DELEGATE_INIT(pco, pco->buf);
     BinarySource_INIT(pco, "", 0);
     return pco;
@@ -2566,7 +2604,12 @@ static unsigned pageant_client_op_query(PageantClientOp *pco)
     if (!pageant_local) {
         void *response_raw;
         int resplen_raw;
-        agent_query_synchronous(pco->buf, &response_raw, &resplen_raw);
+#ifdef PUTTY_CAC
+        if (pco->provider_add)
+            agent_query_local_provider(pco->buf, &response_raw, &resplen_raw);
+        else
+#endif
+            agent_query_synchronous(pco->buf, &response_raw, &resplen_raw);
         strbuf_clear(pco->buf);
         put_data(pco->buf, response_raw, resplen_raw);
         sfree(response_raw);
@@ -2586,6 +2629,9 @@ static unsigned pageant_client_op_query(PageantClientOp *pco)
         pic.response = pco->buf;
         pic.got_response = false;
         pageant_register_client(&pic.pc);
+#ifdef PUTTY_CAC
+        pic.pc.allow_provider_add = true;
+#endif
 
         assert(pco->buf->len > 4);
         PageantAsyncOp *pao = pageant_make_op(
@@ -2989,18 +3035,11 @@ int pageant_add_keyfile(Filename *filename, const char *passphrase,
         put_byte(pco, SSH2_AGENTC_ADD_IDENTITY);
         put_stringz(pco, ssh_key_ssh_id(skey->key));
 #ifdef PUTTY_CAC
-        /*
-         * Certificate-backed keys do not contain exportable private key
-         * material. The receiving PuTTY-CAC Pageant recognises the
-         * certificate selector in the following comment and reloads the
-         * key from its provider, so no OpenSSH private blob is required.
-         * Reject any other key type which unexpectedly lacks a serializer.
-         */
-        if (cert_is_certpath(filename->cpath)) {
-            /* The selector itself is the complete private-key reference. */
-        } else if (ssh_key_alg(skey->key)->openssh_blob) {
+        /* Send provider references only over the local management transport. */
+        pco->provider_add = cert_is_certpath(filename->cpath);
+        if (!pco->provider_add && ssh_key_alg(skey->key)->openssh_blob) {
             ssh_key_openssh_blob(skey->key, BinarySink_UPCAST(pco));
-        } else {
+        } else if (!pco->provider_add) {
             pageant_client_op_free(pco);
             sfree(skey->comment);
             ssh_key_free(skey->key);
@@ -3020,6 +3059,13 @@ int pageant_add_keyfile(Filename *filename, const char *passphrase,
         sfree(skey);
 
         if (reply != SSH_AGENT_SUCCESS) {
+#ifdef PUTTY_CAC
+            if (reply > 255 && cert_is_certpath(filename->cpath)) {
+                *retstr = dupstr("Pageant did not answer the provider request. If Pageant is elevated, "
+                                 "add the key from its tray menu or run both instances at the same elevation.");
+                return PAGEANT_ACTION_FAILURE;
+            }
+#endif
             *retstr = dupstr("The already running agent "
                              "refused to add the key.");
             return PAGEANT_ACTION_FAILURE;

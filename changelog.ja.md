@@ -34,3 +34,18 @@
   - `README.ja.md` を新規作成し、`README.md` と合わせて PuTTY CAC Ex（`mod-ranvis` / `mod-d2ddw` ブランチ構成、ライセンス、動作要件、ビルド手順）向けに内容を刷新。
 - **バージョン更新 (`0.85.3+rv20260820.p1`)**:
   - `code/version.h`: `TEXTVER` を `Release 0.85.3+rv20260820.p1`、`BINARY_VERSION` を `0,85,3,1` に更新（`SSHVER` は upstream PuTTY CAC 準拠の `-Release-0.85-3` を維持）。
+
+## `0.85.3+rv20260820.p2` (2026-11-21)
+- **upstream (`NoMoreFood/putty-cac`) の変更取り込み (`45ca036..85786e6`, 2026-11-17〜11-19)**:
+  - **証明書・FIDO2 / PKCS#11 / CAPI / SSH 認証**:
+    - `code/contrib/libfido2/lib/*/cbor.lib` を更新し、`puttyimp` のビルド・UAC マニフェスト埋め込み (`code/windows/puttyimp.rc`) およびプラットフォーム別 MSI コンポーネント GUID (`code/windows/installer.wxs`) を修正。
+    - FIDO2 資格情報キャッシュの同期更新・Credential ID による削除・デバイス ID 解析・ポータブル設定エクスポートの競合を修正 (`code/cert/cert_fido.c`, `code/cert/cert_portable.c`, `code/windows/puttyimp.c`, `code/config.c`)。
+    - PKCS#11 楕円曲線鍵検索、プロバイダ PIN キャッシュ、X.509v3 / Raw Public Key ネゴシエーションと署名処理を整理・修正 (`code/cert/cert_pkcs.c`, `code/cert/cert_capi.c`, `code/cert/cert_common.c`, `code/crypto/ecc-ssh.c`, `code/crypto/rsa.c`, `code/ssh/userauth2-client.c`, `code/ssh/transport2.c`)。
+  - **Pageant**:
+    - プロバイダ登録をローカル管理チャネル (`PAGEANT_PROVIDER_COPYDATA_ID`) に制限し、記憶プロバイダ永続化・鍵表示・クリップボードコピー処理を整理 (`code/pageant.c`, `code/pageant.h`, `code/windows/pageant.c`, `code/windows/agent-client.c`)。
+  - **PuTTYTab**:
+    - 検索ショートカットおよび URL クリック・DBCS 検索オフセット処理を修正 (`code/windows/tab/puttytab.cpp`, `code/windows/tab/puttytab.rc`, `code/windows/tab/search.h`, `code/windows/tab/terminaltext.h`)。
+  - **その他**:
+    - `code/settings.c` の冗長な証明書設定代入を削除、`packager/build.cmd`・テストスクリプト (`tools/Test-PuTTYCAC*.ps1`, `code/test/sclog/CMakeLists.txt`) を更新。
+- **バージョン更新 (`0.85.3+rv20260820.p2`)**:
+  - `code/version.h`: `RELEASE` / `TEXTVER` を `0.85.3+rv20260820.p2`、`BINARY_VERSION` を `0,85,3,2` に更新。

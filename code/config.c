@@ -828,7 +828,7 @@ void cert_event_handler(dlgcontrol* ctrl, dlgparam* dlg, void* data, int event)
 		char* szCert = conf_get_str(conf, CONF_cert_fingerprint);
 		char* szKeyString = cert_key_string(szCert, GetKeyState(VK_SHIFT) >= 0);
 		if (szKeyString == NULL) return;
-        write_aclip(NULL, CLIP_SYSTEM, szKeyString, strlen(szKeyString));
+		cert_copy_to_clipboard(dlg->hwnd, szKeyString);
 		sfree(szKeyString);
 	}
 
@@ -958,35 +958,15 @@ void fido_event_handler(dlgcontrol* ctrl, dlgparam* dlg, void* data, int event)
 			return;
 		}
 
-		// first see if a duplicate key exists
-		char* szCertDupCheck = dupprintf("FIDO:%s", szAppId);
-		PCERT_CONTEXT pCert = NULL;
-		HCERTSTORE hCertStore = NULL;
-		BOOL bKeyExists = cert_load_cert(szCertDupCheck, &pCert, &hCertStore);
-		sfree(szCertDupCheck);
-		if (bKeyExists)
-		{
-			CertFreeCertificateContext(pCert);
-			CertCloseStore(hCertStore, 0);
-			if (MessageBoxW(NULL, L"It appears that a FIDO key with this name may already exist. " \
-				L"PuTTY CAC may not be able to determine which key to use. Are you sure you want to continue?",
-				L"FIDO Duplicate Key Detected", MB_SYSTEMMODAL | MB_ICONQUESTION | MB_YESNO) != IDYES)
-			{
-				sfree(szDisplayName);
-				sfree(szAppId);
-				return;
-			}
-		}
-
 		// fetch options from resident key and verification boxes
 		int bResidentKey = (dlg_radiobutton_get(fidod->fido_resident_radio, dlg) == 0);
 		int bVerificationRequired = (dlg_radiobutton_get(fidod->fido_verification_radio, dlg) == 1);
 
 		// attempt to create key
 		cert_set_busy_cursor(dlg->hwnd, TRUE);
-		BOOL bCreated = fido_create_key(szAlgId, szDisplayName, szAppId, bResidentKey, bVerificationRequired);
+		HRESULT result = fido_create_key(szAlgId, szDisplayName, szAppId, bResidentKey, bVerificationRequired);
 		cert_set_busy_cursor(dlg->hwnd, FALSE);
-		if (bCreated)
+		if (result == S_OK)
 		{
 			// alert user of success and ask about assignment
 			if (MessageBoxW(NULL, L"FIDO key creation was successful and has been added to the FIDO cache. " \
@@ -999,9 +979,8 @@ void fido_event_handler(dlgcontrol* ctrl, dlgparam* dlg, void* data, int event)
 				sfree(szCert);
 			}
 		}
-		else MessageBoxW(NULL, L"PuTTY could not create the key on the token. Verify that a " \
-			L"compatible token is attached. You may have also entered the PIN incorrectly " \
-			L"or the token may not support the selected algorithm / parameters.",
+		else if (FAILED(result)) MessageBoxW(NULL, L"PuTTY could not create or save the key. Check the token, PIN, "
+			L"and whether the saved credential changed during creation.",
 			L"FIDO Key Creation Failed", MB_SYSTEMMODAL | MB_ICONERROR | MB_OK);
 
 		sfree(szDisplayName);
@@ -1011,13 +990,7 @@ void fido_event_handler(dlgcontrol* ctrl, dlgparam* dlg, void* data, int event)
 	// handle fido key delete button press
 	if (ctrl == fidod->fido_delete_key_button && event == EVENT_ACTION)
 	{
-		char* szCert = cert_prompt(IDEN_FIDO, FALSE,
-			L"Select a FIDO key to remove. If this is a resident key, it will also " \
-			L"be deleted from the token.");
-		if (szCert == NULL) return;
-
-		fido_delete_key(szCert);
-		sfree(szCert);
+		fido_delete_key();
 	}
 
 	// handle key algorithm key combo box population
