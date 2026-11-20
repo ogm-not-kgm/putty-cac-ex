@@ -641,10 +641,9 @@ LPSTR cert_get_cert_thumbprint(LPCSTR szIden, PCCERT_CONTEXT pCertContext)
 	return szThumb;
 }
 
-LPSTR cert_prompt(LPCSTR szIden, BOOL bAutoSelect, LPCWSTR sCustomPrompt)
+PCCERT_CONTEXT cert_select_certificate(LPCSTR szIden, BOOL bAutoSelect, LPCWSTR sCustomPrompt)
 {
 	HCERTSTORE hCertStore = NULL;
-	LPCSTR szHint = NULL;
 
 	if (cert_is_capipath(szIden))
 	{
@@ -667,6 +666,11 @@ LPSTR cert_prompt(LPCSTR szIden, BOOL bAutoSelect, LPCWSTR sCustomPrompt)
 		X509_ASN_ENCODING | PKCS_7_ASN_ENCODING,
 		0, CERT_STORE_CREATE_NEW_FLAG, NULL);
 
+	if (!hMemoryStore) {
+		CertCloseStore(hCertStore, 0);
+		return NULL;
+	}
+
 	// enumerate all certs
 	PCCERT_CONTEXT pCertContext = NULL;
 	int iCertCount = 0;
@@ -675,15 +679,14 @@ LPSTR cert_prompt(LPCSTR szIden, BOOL bAutoSelect, LPCWSTR sCustomPrompt)
 		// ignore invalid certs based on settings
 		if (!cert_check_valid(szIden, pCertContext)) continue;
 
-		CertAddCertificateContextToStore(hMemoryStore, pCertContext, CERT_STORE_ADD_ALWAYS, NULL);
-		iCertCount++;
+		if (CertAddCertificateContextToStore(hMemoryStore, pCertContext, CERT_STORE_ADD_ALWAYS, NULL))
+			iCertCount++;
 	}
 
 	// close original store as we no longer need it
 	CertCloseStore(hCertStore, 0);
 
 	// select certificate from store
-	LPSTR szCert = NULL;
 	if (iCertCount == 1 && bAutoSelect)
 	{
 		// auto select if only single certificate specified
@@ -701,23 +704,18 @@ LPSTR cert_prompt(LPCSTR szIden, BOOL bAutoSelect, LPCWSTR sCustomPrompt)
 			CRYPTUI_SELECT_LOCATION_COLUMN, 0, NULL);
 	}
 
-	// get the certificate hash to pass back
-	if (pCertContext != NULL)
-	{
-		BYTE pbThumbBinary[SHA1_BINARY_SIZE];
-		DWORD cbThumbBinary = SHA1_BINARY_SIZE;
-		if (CertGetCertificateContextProperty(pCertContext, CERT_HASH_PROP_ID, pbThumbBinary, &cbThumbBinary) == TRUE)
-		{
-			szCert = cert_get_cert_thumbprint(IDEN_PREFIX(szIden), pCertContext);
-		}
+	// The selected context retains its reference to the memory store.
+	CertCloseStore(hMemoryStore, 0);
+	return pCertContext;
+}
 
-		// cleanup
-		CertFreeCertificateContext(pCertContext);
-	}
-
-	// cleanup and return
-	CertCloseStore(hMemoryStore, CERT_CLOSE_STORE_FORCE_FLAG);
-	return szCert;
+LPSTR cert_prompt(LPCSTR szIden, BOOL bAutoSelect, LPCWSTR sCustomPrompt)
+{
+	PCCERT_CONTEXT cert = cert_select_certificate(szIden, bAutoSelect, sCustomPrompt);
+	if (!cert) return NULL;
+	LPSTR selector = cert_get_cert_thumbprint(IDEN_PREFIX(szIden), cert);
+	CertFreeCertificateContext(cert);
+	return selector;
 }
 
 BOOL cert_load_cert(LPCSTR szCert, PCERT_CONTEXT* ppCertContext, HCERTSTORE* phCertStore)
@@ -803,7 +801,8 @@ static LPCSTR cert_signature_alg(
 	struct ssh2_userkey* userkey, int iAgentFlags)
 {
 	if (userkey == NULL || userkey->key == NULL ||
-		userkey->key->vt == NULL || userkey->key->vt->ssh_id == NULL)
+		userkey->key->vt == NULL || userkey->key->vt->ssh_id == NULL ||
+		((unsigned)iAgentFlags & ~ssh_key_supported_flags(userkey->key)))
 	{
 		return NULL;
 	}
@@ -817,18 +816,8 @@ static LPCSTR cert_signature_alg(
 
 	if (!strcmp(szAlgo, "ssh-rsa"))
 	{
-		if ((iAgentFlags & SSH_AGENT_RSA_SHA2_512) &&
-			userkey->comment != NULL &&
-			cert_test_hash(userkey->comment, SSH_AGENT_RSA_SHA2_512))
-		{
-			return "rsa-sha2-512";
-		}
-		if ((iAgentFlags & SSH_AGENT_RSA_SHA2_256) &&
-			userkey->comment != NULL &&
-			cert_test_hash(userkey->comment, SSH_AGENT_RSA_SHA2_256))
-		{
-			return "rsa-sha2-256";
-		}
+		if (iAgentFlags & SSH_AGENT_RSA_SHA2_512) return "rsa-sha2-512";
+		if (iAgentFlags & SSH_AGENT_RSA_SHA2_256) return "rsa-sha2-256";
 	}
 
 	return szAlgo;
@@ -969,7 +958,7 @@ BOOL cert_sign(struct ssh2_userkey* userkey,
 		if (!cert_public_blob_matches(userkey, pExpectedBlob, iExpectedBlobLen)) return FALSE;
 	}
 
-	// determine hashing algorithm for signing - upgrade to sha2 if possible
+	// Use the signature algorithm negotiated for this request.
 	LPCSTR sHashAlgName = cert_signature_alg(userkey, iAgentFlags);
 	if (cert_hash_alg_from_name(sHashAlgName) == CERT_HASH_INVALID)
 		return FALSE;
@@ -1426,6 +1415,24 @@ struct ssh2_userkey* cert_load_key(LPCSTR szCert)
 	return cert_load_key_with_x509(szCert, cert_auth_x509_enabled(CERT_QUERY));
 }
 
+void cert_copy_to_clipboard(HWND hwnd, const char *text)
+{
+	size_t size = strlen(text) + 1;
+	HGLOBAL mem = GlobalAlloc(GMEM_MOVEABLE, size);
+	if (!mem) return;
+	char *copy = GlobalLock(mem);
+	if (copy) {
+		memcpy(copy, text, size);
+		GlobalUnlock(mem);
+		if (OpenClipboard(hwnd)) {
+			if (EmptyClipboard() && SetClipboardData(CF_TEXT, mem))
+				mem = NULL; /* The clipboard owns the allocation. */
+			CloseClipboard();
+		}
+	}
+	if (mem) GlobalFree(mem);
+}
+
 LPSTR cert_key_string(LPCSTR szCert, BOOL bIncludeSubject)
 {
 	// sanity check
@@ -1866,24 +1873,24 @@ VOID cert_pin_clear(LPCSTR szCert)
 			continue;
 		}
 		*ppItem = hItem->NextItem;
-		SecureZeroMemory(hItem->szPin, hItem->iLength);
+		if (hItem->szPin) SecureZeroMemory(hItem->szPin, hItem->iLength);
 		sfree(hItem->szPin);
 		sfree(hItem->szCert);
 		sfree(hItem);
 	}
 }
 
-PVOID cert_pin(LPSTR szCert, BOOL bWide, LPVOID szPin, PBOOL pbCached)
+PVOID cert_pin(LPCSTR szCert, BOOL bWide, PBOOL pbCached)
 {
 	if (pbCached != NULL) *pbCached = FALSE;
-	if (!cert_cache_enabled(CERT_QUERY)) return szPin == NULL ? cert_prompt_pin(bWide) : NULL;
-	if (szPin != NULL) cert_pin_clear(szCert);
+	if (!cert_cache_enabled(CERT_QUERY)) return cert_prompt_pin(bWide);
 
 	// attempt to locate the item in the pin cache
 	for (CACHE_ITEM* hCurItem = PinCacheList; hCurItem != NULL; hCurItem = hCurItem->NextItem)
 	{
 		if (strcmp(hCurItem->szCert, szCert) == 0 && hCurItem->bWide == bWide)
 		{
+			if (!hCurItem->szPin) return NULL;  // The provider handles its own PIN prompt.
 			// Provider callers release returned PINs with free.
 			VOID* pEncrypted = malloc(hCurItem->iLength);
 			if (pEncrypted == NULL) return NULL;
@@ -1900,15 +1907,20 @@ PVOID cert_pin(LPSTR szCert, BOOL bWide, LPVOID szPin, PBOOL pbCached)
 		}
 	}
 
-	// request to add item to pin cache
-	if (szPin != NULL)
-	{
-		// determine length of storage (round up to block size)
+	return cert_prompt_pin(bWide);
+}
+
+void cert_cache_pin(LPCSTR szCert, BOOL bWide, const void *szPin)
+{
+	if (!cert_cache_enabled(CERT_QUERY)) return;
+	cert_pin_clear(szCert);
+	VOID *pEncrypted = NULL;
+	DWORD iCryptLength = 0;
+	if (szPin) {
 		const DWORD iLength = ((bWide) ? sizeof(WCHAR) : sizeof(CHAR)) *
 			(1 + ((bWide) ? wcslen(szPin) : strlen(szPin)));
-		const DWORD iCryptLength = CRYPTPROTECTMEMORY_BLOCK_SIZE *
-			((iLength / CRYPTPROTECTMEMORY_BLOCK_SIZE) + 1);
-		VOID* pEncrypted = snewn(iCryptLength, BYTE);
+		iCryptLength = (iLength + CRYPTPROTECTMEMORY_BLOCK_SIZE - 1) & ~(CRYPTPROTECTMEMORY_BLOCK_SIZE - 1);
+		pEncrypted = snewn(iCryptLength, BYTE);
 		memset(pEncrypted, 0, iCryptLength);
 		memcpy(pEncrypted, szPin, iLength);
 
@@ -1917,21 +1929,17 @@ PVOID cert_pin(LPSTR szCert, BOOL bWide, LPVOID szPin, PBOOL pbCached)
 		{
 			SecureZeroMemory(pEncrypted, iCryptLength);
 			sfree(pEncrypted);
-			return NULL;
+			return;
 		}
-
-		// allocate new item in cache and commit the change
-		CACHE_ITEM* hItem = snew(CACHE_ITEM);
-		hItem->szCert = dupstr(szCert);
-		hItem->szPin = pEncrypted;
-		hItem->iLength = iCryptLength;
-		hItem->bWide = bWide;
-		hItem->NextItem = PinCacheList;
-		PinCacheList = hItem;
-		return NULL;
 	}
 
-	return cert_prompt_pin(bWide);
+	CACHE_ITEM* hItem = snew(CACHE_ITEM);
+	hItem->szCert = dupstr(szCert);
+	hItem->szPin = pEncrypted;
+	hItem->iLength = iCryptLength;
+	hItem->bWide = bWide;
+	hItem->NextItem = PinCacheList;
+	PinCacheList = hItem;
 }
 
 VOID cert_registry_setting_set(LPCSTR sSetting, CERT_SETCMD iCommand)
@@ -1992,7 +2000,10 @@ BOOL cert_trusted_certs_only(CERT_SETCMD iCommand)
 
 BOOL cert_save_cert_list_enabled(CERT_SETCMD iCommand)
 {
-	return cert_registry_setting("SaveCertListEnabled", iCommand);
+	BOOL enabled = cert_registry_setting("SaveCertListEnabled", iCommand);
+	if (iCommand == CERT_UNSET && !enabled)
+		RegDeleteKeyValueA(HKEY_CURRENT_USER, PUTTY_REG_POS, "SaveCertList");
+	return enabled;
 }
 
 BOOL cert_cache_enabled(CERT_SETCMD iCommand)

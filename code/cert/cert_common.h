@@ -107,10 +107,10 @@ EXTERN BOOL cert_sign_for_keyalg(LPCSTR szCert,
 EXTERN VOID cert_set_busy_cursor(HWND hWnd, BOOL bBusy);
 EXTERN VOID cert_set_parent_hwnd(HWND hWnd);
 EXTERN HWND cert_get_parent_hwnd(VOID);
-EXTERN HRESULT fido_get_last_error(VOID);
-EXTERN LPCWSTR fido_get_last_error_name(VOID);
+EXTERN void cert_copy_to_clipboard(HWND hwnd, const char *text);
 EXTERN LPSTR cert_key_string(LPCSTR szCert, BOOL bIncludeSubject);
 EXTERN LPSTR cert_subject_string(LPCSTR szCert);
+EXTERN PCCERT_CONTEXT cert_select_certificate(LPCSTR szIden, BOOL bAutoSelect, LPCWSTR sCustomPrompt);
 EXTERN LPSTR cert_prompt(LPCSTR szIden, BOOL bAutoSelect, LPCWSTR sCustomPrompt);
 EXTERN BOOL cert_test_hash(LPCSTR szCert, DWORD iHashRequest);
 EXTERN BOOL cert_confirm_signing(LPCSTR sFingerPrint, LPCSTR sComment,
@@ -128,12 +128,14 @@ EXTERN struct ssh2_userkey * cert_load_key(LPCSTR szCert);
 EXTERN VOID cert_display_cert(LPCSTR szCert, HWND hWnd);
 EXTERN int cert_all_certs(LPSTR ** pszCert);
 EXTERN LPBYTE cert_get_hash(LPCSTR szAlgo, LPCBYTE pDataToHash, DWORD iDataToHashSize, DWORD * iHashedDataSize, BOOL bPrependDigest);
-EXTERN PVOID cert_pin(LPSTR szCert, BOOL bWide, LPVOID szPin, PBOOL pbCached);
+EXTERN PVOID cert_pin(LPCSTR szCert, BOOL bWide, PBOOL pbCached);
+EXTERN void cert_cache_pin(LPCSTR szCert, BOOL bWide, const void *szPin);
 EXTERN VOID cert_pin_clear(LPCSTR szCert);
 EXTERN PVOID cert_prompt_pin(BOOL bWide);
 EXTERN BOOL cert_capi_delete_key(LPCSTR szCert);
-EXTERN BOOL fido_create_key(LPCSTR szAlgName, LPCSTR szDisplayName, LPCSTR szApplication, BOOL bResidentKey, BOOL bUserVerification);
-EXTERN BOOL fido_delete_key(LPCSTR szCert);
+EXTERN HRESULT fido_create_key(LPCSTR szAlgName, LPCSTR szDisplayName, LPCSTR szApplication,
+	BOOL bResidentKey, BOOL bUserVerification);
+EXTERN BOOL fido_delete_key(void);
 EXTERN VOID fido_import_keys();
 EXTERN LPSTR fido_import_openssh_key();
 EXTERN VOID fido_clear_keys();

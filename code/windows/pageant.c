@@ -122,8 +122,6 @@ static void gui_reencrypt_all(void);
 #define IDM_SCONLY   0x0180
 #define IDM_NOEXPR   0x0190
 #define IDM_TRUSTED  0x01A0
-static bool cert_list_loading = true;
-static bool cert_list_save_pending = false;
 #endif // PUTTY_CAC
 
 /*
@@ -379,9 +377,6 @@ struct keylist_update_ctx {
 
 struct keylist_display_data {
     strbuf *alg, *bits, *hash, *comment, *info;
-#ifdef PUTTY_CAC
-    bool provider_backed;
-#endif
 };
 
 static void keylist_update_callback(
@@ -398,10 +393,6 @@ static void keylist_update_callback(
     disp->hash = strbuf_new();
     disp->comment = strbuf_new();
     disp->info = strbuf_new();
-#ifdef PUTTY_CAC
-    disp->provider_backed = key->ssh_version == 2 &&
-        pageant_ssh2_blob_is_provider(ptrlen_from_strbuf(key->blob));
-#endif
 
     /* There is at least one key, so the controls for removing keys
      * should be enabled */
@@ -448,6 +439,18 @@ static void keylist_update_callback(
     }
 
     put_dataz(disp->comment, comment);
+#ifdef PUTTY_CAC
+    if (key->ssh_version == 2 && pageant_ssh2_blob_is_provider(ptrlen_from_strbuf(key->blob))) {
+        char *subject = cert_subject_string(comment);
+        if (subject) {
+            strbuf_clear(disp->comment);
+            put_dataz(disp->comment, subject);
+            sfree(subject);
+        }
+        strbuf_clear(disp->hash);
+        put_data(disp->hash, comment, cert_is_pkcspath(comment) ? strcspn(comment, "=") : strlen(comment));
+    }
+#endif
 
     SIZE sz;
     if (disp->bits->len) {
@@ -545,38 +548,60 @@ void keylist_update(void)
                      ctx->enable_reencrypt_controls);
     }
 
-#ifdef PUTTY_CAC
-    if (cert_save_cert_list_enabled(CERT_QUERY))
-    {
-        if (cert_list_loading)
-        {
-            cert_list_save_pending = true;
-            return;
-        }
-        /* initialize a double-null terminated string */
-        char* slist = snewn(2, char);
-        int slistsize = 0;
-        memset(slist, 0, 2);
-        char* comment = NULL;
-        for (int ikey = 0; (comment = pageant_nth_ssh2_comment(ikey)) != NULL; ikey++)
-        {
-            /* only process cert keys*/
-            if (!pageant_nth_ssh2_is_provider(ikey)) continue;
-
-            /* append the null separated, double-null terminated string */
-            slist = srealloc(slist, slistsize + strlen(comment) + 2);
-            strcpy(&slist[slistsize], comment);
-            slist[slistsize + strlen(comment) + 1] = '\0';
-            slistsize += strlen(comment) + 1;
-        }
-
-        /* commit full list to registry */
-        RegSetKeyValue(HKEY_CURRENT_USER, PUTTY_REG_POS, "SaveCertList",
-            REG_MULTI_SZ, slist, slistsize > 0 ? slistsize + 1 : 2);
-        sfree(slist);
-    }
-#endif /* PUTTY_CAC */
 }
+
+#ifdef PUTTY_CAC
+static char *load_remembered_providers(void)
+{
+    DWORD size = 0;
+    LSTATUS status = RegGetValueA(HKEY_CURRENT_USER, PUTTY_REG_POS, "SaveCertList",
+                                  RRF_RT_REG_MULTI_SZ, NULL, NULL, &size);
+    if (status == ERROR_FILE_NOT_FOUND || status == ERROR_PATH_NOT_FOUND)
+        return dupstr("");
+    if (status != ERROR_SUCCESS || size > SIZE_MAX - 2)
+        return NULL;
+    char *list = snewn((size_t)size + 2, char);
+    memset(list + size, 0, 2);
+    if (RegGetValueA(HKEY_CURRENT_USER, PUTTY_REG_POS, "SaveCertList",
+                     RRF_RT_REG_MULTI_SZ, NULL, list, &size) == ERROR_SUCCESS)
+        return list;
+    sfree(list);
+    return NULL;
+}
+
+void pageant_remember_provider(const char *selector, bool add)
+{
+    if (!cert_save_cert_list_enabled(CERT_QUERY))
+        return;
+    if (!selector) {
+        RegDeleteKeyValueA(HKEY_CURRENT_USER, PUTTY_REG_POS, "SaveCertList");
+        return;
+    }
+
+    char *list = load_remembered_providers();
+    if (!list)
+        return;
+    strbuf *updated = strbuf_new();
+    bool present = false;
+    for (const char *p = list; *p; p += strlen(p) + 1) {
+        if (!strcmp(selector, p))
+            present = true;
+        else
+            put_asciz(updated, p);
+    }
+    if (add != present) {
+        if (add)
+            put_asciz(updated, selector);
+        if (!updated->len)
+            put_byte(updated, 0);
+        put_byte(updated, 0);
+        RegSetKeyValueA(HKEY_CURRENT_USER, PUTTY_REG_POS, "SaveCertList",
+                        REG_MULTI_SZ, updated->s, updated->len);
+    }
+    strbuf_free(updated);
+    sfree(list);
+}
+#endif
 
 static void win_add_keyfile(Filename *filename, bool encrypted)
 {
@@ -1144,22 +1169,6 @@ static INT_PTR CALLBACK KeyListProc(HWND hwnd, UINT msg,
                            disp->bits->s, disp->bits->len, NULL);
             }
 
-#ifdef PUTTY_CAC
-            if (disp->provider_backed && cert_is_certpath(disp->comment->s))
-            {
-                // replace the has with the thumbprint
-                LPSTR thumbprint = _strdup(disp->comment->s);
-                if (cert_is_pkcspath(disp->comment->s) && strchr(thumbprint,'=') != NULL)
-                {
-                    strchr(thumbprint, '=')[0] = '\0';
-                }
-                ExtTextOut(di->hDC, di->rcItem.left + r.right + colpos_hash,
-                    di->rcItem.top, ETO_CLIPPED, &di->rcItem,
-                    thumbprint, strlen(thumbprint), NULL);
-                free(thumbprint);
-            }
-            else
-#endif // PUTTY_CAC
             ExtTextOut(di->hDC, di->rcItem.left + r.right + colpos_hash,
                        di->rcItem.top, ETO_CLIPPED, &di->rcItem,
                        disp->hash->s, disp->hash->len, NULL);
@@ -1170,21 +1179,6 @@ static INT_PTR CALLBACK KeyListProc(HWND hwnd, UINT msg,
                 put_byte(sb, '\t');
                 put_datapl(sb, ptrlen_from_strbuf(disp->info));
             }
-
-#ifdef PUTTY_CAC
-            if (disp->provider_backed && cert_is_certpath(disp->comment->s))
-            {
-                // replace the comment with the subject name
-                LPSTR subjectname = cert_subject_string(disp->comment->s);
-                if (subjectname != NULL)
-                {
-                    TabbedTextOut(di->hDC, di->rcItem.left + r.right + colpos_comment,
-                        di->rcItem.top, subjectname, strlen(subjectname), 0, NULL, 0);
-                    sfree(subjectname);
-                }
-            }
-            else
-#endif // PUTTY_CAC
 
             TabbedTextOut(di->hDC, di->rcItem.left + r.right + colpos_comment,
                           di->rcItem.top, sb->s, sb->len, 0, NULL, 0);
@@ -1294,25 +1288,7 @@ static INT_PTR CALLBACK KeyListProc(HWND hwnd, UINT msg,
 			}
 			sfree(selectedArray);
 			
-			/* allocate global memory so other apps can see grab it from the clipboard */
-			HGLOBAL hGlob = GlobalAlloc(GMEM_MOVEABLE, strlen(szClipString) + 1);
-			if (hGlob != NULL)
-			{
-				/* open clipboard and copy key in */
-                if (OpenClipboard(hwnd) != 0 && EmptyClipboard() != 0)
-                {
-                    /* copy the key string into a global for loading onto the clipboard */
-                    char* szClipData = (char*)GlobalLock(hGlob);
-                    if (szClipData != NULL)
-                    {
-                        strcpy(szClipData, szClipString);
-                        GlobalUnlock(hGlob);
-                        SetClipboardData(CF_TEXT, hGlob);
-                    }
-                    CloseClipboard();
-                }
-			}
-
+			cert_copy_to_clipboard(hwnd, szClipString);
 			sfree(szClipString);
 		  }
 		  return 0;
@@ -1782,6 +1758,12 @@ static char *answer_filemapping_message(const char *mapname)
         }
 #endif
 
+#ifdef PUTTY_CAC
+        if (wmcpc.allow_provider_add && !EqualSid(mapsid, expectedsid)) {
+            err = dupstr("provider registration requires a file mapping owned by the current user");
+            goto cleanup;
+        }
+#endif
         if (!EqualSid(mapsid, expectedsid) &&
             !EqualSid(mapsid, expectedsid_bc)) {
             err = dupstr("wrong owning SID of file mapping");
@@ -2027,7 +2009,16 @@ static LRESULT CALLBACK TrayWndProc(HWND hwnd, UINT message,
 		  CheckMenuItem(systray_menu, IDM_SAVELIST, iNewState);
 		  DWORD SaveCertListEnabled = (iNewState == MF_CHECKED);
 		  cert_save_cert_list_enabled(SaveCertListEnabled ? CERT_SET : CERT_UNSET);
-		  if (SaveCertListEnabled) keylist_update();
+          if (SaveCertListEnabled) {
+              strbuf *list = strbuf_new();
+              for (int i = 0; i < pageant_count_ssh2_keys(); i++)
+                  if (pageant_nth_ssh2_is_provider(i))
+                      put_asciz(list, pageant_nth_ssh2_comment(i));
+              if (!list->len) put_byte(list, 0);
+              put_byte(list, 0);
+              RegSetKeyValueA(HKEY_CURRENT_USER, PUTTY_REG_POS, "SaveCertList", REG_MULTI_SZ, list->s, list->len);
+              strbuf_free(list);
+          }
 	  } break;
 	  case IDM_PINCACHE: {
 		  DWORD iItem = CheckMenuItem(systray_menu, IDM_PINCACHE, MF_CHECKED);
@@ -2196,6 +2187,15 @@ static LRESULT CALLBACK wm_copydata_WndProc(HWND hwnd, UINT message,
         char *mapname, *err;
 
         cds = (COPYDATASTRUCT *) lParam;
+#ifdef PUTTY_CAC
+        if (!cds || !cds->lpData || !cds->cbData)
+            return 0;
+        /* Only the local management transport can authorize loading a provider. */
+        wmcpc.allow_provider_add = cds->dwData == PAGEANT_PROVIDER_COPYDATA_ID;
+        if (wmcpc.allow_provider_add) {
+            if (!should_have_security()) return 0;
+        } else
+#endif
         if (cds->dwData != AGENT_COPYDATA_ID)
             return 0;              /* not our message, mate */
         mapname = (char *) cds->lpData;
@@ -2700,13 +2700,8 @@ int WINAPI WinMain(HINSTANCE inst, HINSTANCE prev, LPSTR cmdline, int show)
 
     if (cert_save_cert_list_enabled(CERT_QUERY))
     {
-        DWORD iKeySize = 0;
-        char* szKey = NULL;
-        if (RegGetValue(HKEY_CURRENT_USER, PUTTY_REG_POS, "SaveCertList", RRF_RT_REG_MULTI_SZ,
-            NULL, NULL, &iKeySize) == ERROR_SUCCESS &&
-            RegGetValue(HKEY_CURRENT_USER, PUTTY_REG_POS, "SaveCertList", RRF_RT_REG_MULTI_SZ,
-                NULL, (szKey = snewn(iKeySize, char)), &iKeySize) == ERROR_SUCCESS)
-        {
+        char *szKey = load_remembered_providers();
+        if (szKey) {
             for (char* szKeyPart = szKey; *szKeyPart != '\0'; szKeyPart += strlen(szKeyPart) + 1)
             {
                 char* szErr = NULL;
@@ -2718,9 +2713,6 @@ int WINAPI WinMain(HINSTANCE inst, HINSTANCE prev, LPSTR cmdline, int show)
         }
         sfree(szKey);
     }
-
-    cert_list_loading = false;
-    if (cert_list_save_pending) keylist_update();
 
     AppendMenu(systray_menu, MF_ENABLED, IDM_VIEWKEYS, "&View Keys && Certs");
 	AppendMenu(systray_menu, MF_ENABLED, IDM_ADDKEY, "Add PuTTY &Key");

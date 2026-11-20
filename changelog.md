@@ -59,3 +59,18 @@ Integrated `putty-d2ddw/patch/d2ddw.diff` (Direct2D / DirectWrite rendering and 
   - `benchmark.ja.md`, `benchmark.md`: Added Japanese and English rendering performance benchmark reports comparing `master` (GDI) and `mod-d2ddw` (before and after optimization).
   - `packager/build.cmd`, `packager/build.ps1`, `README.ja.md`, `README.md`: Added dual-worktree (`master` + `mod-d2ddw`) `x64` / `arm64` release build, ZIP packaging, and hash generation script, and documented build instructions, `puttytab.exe` compatibility notes, and Architecture Decision Records (ADR) in `README.ja.md` and `README.md`.
   - `code/version.h`: Updated `TEXTVER` to `Release 0.85.3+rv20260820.d2ddw20261119.p1` and `BINARY_VERSION` to `0,85,3,2` (keeping `SSHVER` as `-Release-0.85-3`).
+
+## `0.85.3+rv20260820.d2ddw20261121.p2` (2026-11-21)
+- **Merged `master` (`0.85.3+rv20260820.p2`) with upstream (`NoMoreFood/putty-cac`, `45ca036..85786e6`) updates**:
+  - **Certificates / FIDO2 / PKCS#11 / CAPI / SSH auth**:
+    - Updated `code/contrib/libfido2/lib/*/cbor.lib` and fixed `puttyimp` builds, UAC manifest embedding (`code/windows/puttyimp.rc`), and platform-specific MSI component GUIDs (`code/windows/installer.wxs`).
+    - Fixed FIDO2 credential cache synchronization, deletion by credential ID, device ID parsing, and concurrent portable settings exports (`code/cert/cert_fido.c`, `code/cert/cert_portable.c`, `code/windows/puttyimp.c`, `code/config.c`).
+    - Simplified and fixed PKCS#11 EC key lookup, provider PIN caching, and X.509v3 / raw public key negotiation and signing (`code/cert/cert_pkcs.c`, `code/cert/cert_capi.c`, `code/cert/cert_common.c`, `code/crypto/ecc-ssh.c`, `code/crypto/rsa.c`, `code/ssh/userauth2-client.c`, `code/ssh/transport2.c`).
+  - **Pageant**:
+    - Restricted provider registration to local management (`PAGEANT_PROVIDER_COPYDATA_ID`), and simplified remembered provider persistence, key display, and clipboard handling (`code/pageant.c`, `code/pageant.h`, `code/windows/pageant.c`, `code/windows/agent-client.c`).
+  - **PuTTYTab**:
+    - Fixed find shortcuts, URL click handling, and DBCS search offset handling (`code/windows/tab/puttytab.cpp`, `code/windows/tab/puttytab.rc`, `code/windows/tab/search.h`, `code/windows/tab/terminaltext.h`).
+  - **Other**:
+    - Removed redundant certificate setting assignment in `code/settings.c`, and updated test scripts (`tools/Test-PuTTYCAC*.ps1`, `code/test/sclog/CMakeLists.txt`), while keeping `mod-d2ddw`'s `packager/build.cmd` wrapper for `build.ps1`.
+- **Version update (`0.85.3+rv20260820.d2ddw20261121.p2`)**:
+  - `code/version.h`: Updated `RELEASE` / `TEXTVER` to `0.85.3+rv20260820.d2ddw20261121.p2` and `BINARY_VERSION` to `0,85,3,3` (keeping `SSHVER` as `-Release-0.85-3`).
